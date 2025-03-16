@@ -3,11 +3,11 @@
 
 #include <ncurses.h>
 
-#define MIN_DISTANCE 7
+#define MIN_DISTANCE 6
 #define MAX_HEALTH 3
 #define ALIVE 1
 #define DEAD 0
-#define NUMBER_OF_ALIENS 80
+#define NUMBER_OF_ALIENS 30 // Ajustabil pentru performanță
 
 typedef struct {
     int x, y;
@@ -27,11 +27,9 @@ void printAlien_type3(int x, int y);
 void printAlien_type4(int x, int y);
 
 int check_collision(int x, int y, alien_t* aliens, int index);
-alien_t* createAlien(alien_t* aliens, int index);
-alien_t* createAliens();
+void createAlien(alien_t* alien, alien_t* aliens, int index);
+void createAliens(alien_t* aliens);
 void printAlien(alien_t* alien);
 void printAliens(alien_t* aliens);
-void freeAliens(alien_t* aliens);
-void freeAlien(alien_t* alien);
 
 #endif

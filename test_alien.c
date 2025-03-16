@@ -1,27 +1,18 @@
-#include <ncurses.h>
 #include "aliens.h"
-#include<stdlib.h>
 
-int main() {
-    // Inițializează ncurses și generarea aleatorie
-    init_ncurses();
+int main()
+{
     initialize_random();
+    init_ncurses();
 
-    // Creează 80 de extratereștri
-    alien_t* aliens = createAliens();
+    alien_t aliens[NUMBER_OF_ALIENS];
 
-    // Afișează toți extratereștrii
+    createAliens(aliens);
+    clear_screen();
     printAliens(aliens);
 
-    // Așteaptă apăsarea unei taste pentru a închide
-    refresh();
-    getch();
+    getch(); // Așteaptă input pentru a putea vedea extratereștrii
 
-    // Eliberează memoria
-    freeAliens(aliens);
-
-    // Închide ncurses
     close_ncurses();
-
     return 0;
 }

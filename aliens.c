@@ -28,40 +28,32 @@ void close_ncurses()
 void printAlien_type1(int x, int y)
 {
     attron(COLOR_PAIR(1));
-    mvprintw(y + 1, x, "*******");
-    mvprintw(y + 2, x, "*  *  *");
-    mvprintw(y + 3, x, "  ***  ");
-    mvprintw(y + 4, x, "*     *");
+    mvprintw(y, x, "<o>");
+    mvprintw(y + 1, x, "/|\\");
     attroff(COLOR_PAIR(1));
 }
 
 void printAlien_type2(int x, int y)
 {
     attron(COLOR_PAIR(2));
-    mvprintw(y, x, "**  **");
-    mvprintw(y + 1, x, "  **  ");
-    mvprintw(y + 2, x, "  **  ");
-    mvprintw(y + 3, x, "**  **");
+    mvprintw(y, x, "[#]");
+    mvprintw(y + 1, x, "/ \\");
     attroff(COLOR_PAIR(2));
 }
 
 void printAlien_type3(int x, int y)
 {
     attron(COLOR_PAIR(3));
-    mvprintw(y, x, " *     *");
-    mvprintw(y + 1, x, "  *   *  ");
-    mvprintw(y + 2, x, "   ***   ");
-    mvprintw(y + 3, x, " *******");
+    mvprintw(y, x, "{0}");
+    mvprintw(y + 1, x, "/-\\");
     attroff(COLOR_PAIR(3));
 }
 
 void printAlien_type4(int x, int y)
 {
     attron(COLOR_PAIR(4));
-    mvprintw(y, x, "     *   ");
-    mvprintw(y + 1, x, "   * * *  ");
-    mvprintw(y + 2, x, " *   *   *");
-    mvprintw(y + 3, x, "*         *");
+    mvprintw(y, x, "(^)");
+    mvprintw(y + 1, x, "/V\\");
     attroff(COLOR_PAIR(4));
 }
 
@@ -77,7 +69,7 @@ int check_collision(int x, int y, alien_t* aliens, int index)
     {
         int dx = abs(aliens[i].x - x);
         int dy = abs(aliens[i].y - y);
-        if (dx < MIN_DISTANCE && dy < MIN_DISTANCE)
+        if (dx < MIN_DISTANCE && dy < 2) // Evită suprapunerea
         {
             return 1;
         }
@@ -85,38 +77,29 @@ int check_collision(int x, int y, alien_t* aliens, int index)
     return 0;
 }
 
-alien_t* createAlien(alien_t* aliens, int index)
+void createAlien(alien_t* alien, alien_t* aliens, int index)
 {
-    alien_t* alien = (alien_t*)malloc(sizeof(alien_t));
-
     int x, y;
+    int max_y = (LINES * 2) / 3;  // Limitează extratereștrii la primele 2/3 din ecran
+
     do {
-        x = rand() % 100;
-        y = rand() % 30;
+        x = rand() % (COLS - 5); // Ajustare pentru ca să încapă în ecran
+        y = rand() % (max_y - 2); // Numai în primele 2/3 din ecran
     } while (check_collision(x, y, aliens, index));
 
     alien->x = x;
     alien->y = y;
     alien->type = rand() % 4 + 1;
     alien->health = rand() % MAX_HEALTH + 1;
-    alien->isalive = rand() % 2;
-
-    return alien;
+    alien->isalive = ALIVE;
 }
 
-alien_t* createAliens()
+void createAliens(alien_t* aliens)
 {
-    alien_t* aliens = (alien_t*)malloc(NUMBER_OF_ALIENS * sizeof(alien_t));
-    if (!aliens)
-    {
-        return NULL;
-    }
-
     for (int i = 0; i < NUMBER_OF_ALIENS; i++)
     {
-        aliens[i] = *createAlien(aliens, i);
+        createAlien(&aliens[i], aliens, i);
     }
-    return aliens;
 }
 
 void printAlien(alien_t* alien)
@@ -149,14 +132,5 @@ void printAliens(alien_t* aliens)
     {
         printAlien(&aliens[i]);
     }
-}
-
-void freeAliens(alien_t* aliens)
-{
-    free(aliens);
-}
-
-void freeAlien(alien_t* alien)
-{
-    free(alien);
+    refresh();
 }
