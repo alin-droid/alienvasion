@@ -28,6 +28,7 @@ void close_ncurses()
 void printAlien_type1(int x, int y)
 {
     attron(COLOR_PAIR(1));
+
     mvprintw(y, x, "<o>");
     mvprintw(y + 1, x, "/|\\");
     attroff(COLOR_PAIR(1));
