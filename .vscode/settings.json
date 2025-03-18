@@ -3,6 +3,7 @@
     "files.associations": {
         "time.h": "c",
         "ncurses.h": "c",
-        "stdlib.h": "c"
+        "stdlib.h": "c",
+        "aliens.h": "c"
     }
 }
