@@ -1,0 +1,630 @@
+#include <ncurses.h>
+#include "aliens.h"
+#define max_health 3
+#define alive 1
+#define dead 0
+void init_ncurses()
+{
+    initscr();           
+    start_color();          
+    cbreak();               
+    noecho();               
+    curs_set(0);            
+    init_pair(1, COLOR_RED, COLOR_BLACK);
+    init_pair(2, COLOR_BLUE, COLOR_BLACK);
+    init_pair(3, COLOR_YELLOW, COLOR_BLACK);
+    init_pair(4, COLOR_CYAN, COLOR_BLACK);
+}
+
+void close_ncurses()
+{
+    endwin();  
+}
+ 
+void printAlien_type1(int x, int y)
+{
+    attron(COLOR_PAIR(1));
+
+    mvprintw(y + 1, x,"*******");
+    mvprintw(y + 2, x, "*  *  *");
+    mvprintw(y + 3, x, "  ***  " );
+    mvprintw(y + 4, x, "*     * ");
+    
+    attroff(COLOR_PAIR(1));
+}
+
+void printAlien_type2(int x, int y) {
+    attron(COLOR_PAIR(2));
+    mvprintw(y, x, "[ ]");
+    mvprintw(y + 1, x, "/|\\");
+    attroff(COLOR_PAIR(2));
+}
+
+void printAlien_type3(int x, int y) {
+    attron(COLOR_PAIR(3));
+    mvprintw(y, x, "{0}");
+    mvprintw(y + 1, x, "/-\\");
+    attroff(COLOR_PAIR(3));
+}
+
+void printAlien_type4(int x, int y) {
+    attron(COLOR_PAIR(4));
+    mvprintw(y, x, "(^)");
+    mvprintw(y + 1, x, "/V\\");
+    attroff(COLOR_PAIR(4));
+}
+
+void printAlien(alien_t* alien) {
+    if (alien->isalive == ALIVE && alien->x >= 0 && alien->x < COLS && alien->y >= 0 && alien->y < LINES - 2) {
+        switch (alien->type) {
+            case 1:
+                printAlien_type1(alien->x, alien->y);
+                break;
+            case 2:
+                printAlien_type2(alien->x, alien->y);
+                break;
+            case 3:
+                printAlien_type3(alien->x, alien->y);
+                break;
+            case 4:
+                printAlien_type4(alien->x, alien->y);
+                break;
+            default:
+                break;
+        }
+    }
+}
+
+int check_collision(int x, int y, alien_t* aliens, int index) {
+    for (int i = 0; i < index; i++) {
+        int dx = abs(aliens[i].x - x);
+        int dy = abs(aliens[i].y - y);
+        if (dx < MIN_DISTANCE && dy < 2) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+void createAlien(alien_t* alien, alien_t* aliens, int index) {
+    int x, y;
+    int max_y = (LINES * 2) / 3;
+
+    do {
+        x = rand() % (COLS - 5);
+        y = rand() % (max_y - 2);
+    } while (check_collision(x, y, aliens, index));
+
+    alien->x = x;
+    alien->y = y;
+    alien->type = rand() % 4 + 1;
+    alien->health = rand() % MAX_HEALTH + 1;
+    alien->isalive = ALIVE;
+}
+
+void createAliens(alien_t* aliens) {
+    for (int i = 0; i < NUMBER_OF_ALIENS; i++) {
+        createAlien(&aliens[i], aliens, i);
+    }
+}
+
+void printAliens(alien_t* aliens) {
+    for (int i = 0; i < NUMBER_OF_ALIENS; i++) {
+        printAlien(&aliens[i]);
+    }
+    refresh();
+}
+#ifndef ALIENS_H
+#define ALIENS_H
+
+#include <ncurses.h>
+
+#define MIN_DISTANCE 6
+#define MAX_HEALTH 3
+#define ALIVE 1
+#define DEAD 0
+#define NUMBER_OF_ALIENS 30 // Ajustabil pentru performanță
+
+typedef struct {
+    int x, y;
+    int type;
+    int health;
+    int isalive;
+} alien_t;
+
+void initialize_random();
+void init_ncurses();
+void close_ncurses();
+void clear_screen();
+
+void printAlien_type1(int x, int y);
+void printAlien_type2(int x, int y);
+void printAlien_type3(int x, int y);
+void printAlien_type4(int x, int y);
+
+int check_collision(int x, int y, alien_t* aliens, int index);
+void createAlien(alien_t* alien, alien_t* aliens, int index);
+void createAliens(alien_t* aliens);
+void printAlien(alien_t* alien);
+void printAliens(alien_t* aliens);
+
+#endif
+#ifndef ARME_H
+#define ARME_H
+
+#define MAX_GLOANTE 30
+#define TOTAL_GLOANTE 80
+
+typedef struct {
+    char *nume;
+    int damage;
+    int viteza_gloanț;
+    int directii[4];   // Direcțiile în care poate trage (0 = stânga, 1 = dreapta, 2 = sus, 3 = jos)
+    int gloanțe_disp;  // Gloanțe disponibile
+} arma_t;
+
+void print_menu_arme(int highlight);
+void afiseaza_arme(arma_t* arme);
+void init_arme(arma_t* arme);
+void foloseste_arma(arma_t* arma);
+
+#endif
+#include "arms.h"
+#include <ncurses.h>
+#include <stdio.h>
+
+void init_arme(arma_t* arme) {
+    
+    arme[0] = (arma_t) {"Pistol", 10, 5, {1, 0, 0, 0}, MAX_GLOANTE};  
+    arme[1] = (arma_t) {"Mitralieră", 5, 10, {1, 1, 1, 1}, MAX_GLOANTE}; 
+    arme[2] = (arma_t) {"Rachetă", 30, 3, {1, 0, 0, 0}, MAX_GLOANTE};   // Rachetă - trage doar sus
+    arme[3] = (arma_t) {"Arbaletă", 20, 7, {0, 0, 1, 0}, MAX_GLOANTE};  // Arbaletă - trage doar în stânga
+    arme[4] = (arma_t) {"Laser", 15, 12, {0, 0, 0, 1}, MAX_GLOANTE};    // Laser - trage doar în dreapta
+}
+
+void print_menu_arme(int highlight) {
+    char *choices[] = {
+        "Pistol",
+        "Mitralieră",
+        "Rachetă",
+        "Arbaletă",
+        "Laser"
+    };
+    int n_choices = sizeof(choices) / sizeof(choices[0]);
+
+    for (int i = 0; i < n_choices; i++) {
+        if (i == highlight)
+            attron(A_REVERSE);
+        mvprintw(12 + i * 2, 15, "%s", choices[i]);
+        attroff(A_REVERSE);
+    }
+}
+
+void afiseaza_arme(arma_t* arme) {
+    for (int i = 0; i < 5; i++) {
+        mvprintw(14 + i * 3, 40, "%s - Damage: %d, Viteza: %d, Gloanțe disponibile: %d", 
+            arme[i].nume, arme[i].damage, arme[i].viteza_gloanț, arme[i].gloanțe_disp);
+    }
+}
+
+void foloseste_arma(arma_t* arma) {
+    if (arma->gloanțe_disp > 0) {
+        mvprintw(LINES - 3, 0, "Se trage cu %s! Gloanțe rămase: %d", arma->nume, --arma->gloanțe_disp);
+        refresh();
+        napms(100);  // Delay pentru animație
+    } else {
+        mvprintw(LINES - 3, 0, "Nu mai sunt gloanțe pentru %s!", arma->nume);
+        refresh();
+        napms(100);  // Delay pentru animație
+    }
+}
+#include <ncurses.h>
+#include "nava.h"
+
+void draw_spaceship(int x, int y) {
+    mvprintw(y, x,    "   /\\   ");
+    mvprintw(y+1, x,  "  /  \\  ");
+    mvprintw(y+2, x,  " |----| ");
+    mvprintw(y+3, x,  " | () | ");
+    mvprintw(y+4, x,  " | () | ");
+    mvprintw(y+5, x,  " | __ | ");
+    mvprintw(y+6, x,  "/_\\  /_\\");
+    refresh();
+}
+
+void erase_spaceship(int x, int y) {
+    for (int i = 0; i < 7; i++) {
+        mvprintw(y + i, x, "        ");
+    }
+    refresh();
+}
+
+void move_spaceship() {
+    int x = COLS / 2 - 4;
+    int y = LINES - 7;
+    int ch;
+
+    keypad(stdscr, TRUE); 
+    nodelay(stdscr, TRUE); 
+    curs_set(0); 
+
+    draw_spaceship(x, y);
+
+    while ((ch = getch()) != 'q') { 
+        int new_x = x, new_y = y;
+        
+        switch (ch) {
+            case KEY_LEFT:  if (x > 1) new_x--; break;
+            case KEY_RIGHT: if (x < COLS - 9) new_x++; break;
+            case KEY_UP:    if (y > 1) new_y--; break;
+            case KEY_DOWN:  if (y < LINES - 7) new_y++; break;
+        }
+        
+        if (new_x != x || new_y != y) { 
+            erase_spaceship(x, y);
+            x = new_x;
+            y = new_y;
+            draw_spaceship(x, y);
+        }
+
+        napms(50); 
+    }
+}def NAVA_H
+#define NAVA_H
+
+#include <ncurses.h>
+
+
+#define INIT_X  (COLS / 2 - 4)
+#define INIT_Y  (LINES - 7)
+
+
+#define MAX_LEFT  10
+#define MAX_RIGHT 10
+#define MAX_UP    5
+#define MAX_DOWN  5
+
+
+void draw_spaceship(int x, int y);
+void erase_spaceship(int x, int y);
+void move_spaceship();
+
+#endif 
+#include <ncurses.h>
+#include <stdlib.h>
+#include <time.h>
+#include "nava.h"
+#include "aliens.h"
+#include <stdio.h>
+#define ENTER 10
+void init_ncurses() {
+    initscr();
+    start_color();
+    cbreak();
+    noecho();
+    curs_set(0);
+    keypad(stdscr, TRUE);
+    init_pair(1, COLOR_RED, COLOR_BLACK);
+    init_pair(2, COLOR_BLUE, COLOR_BLACK);
+    init_pair(3, COLOR_YELLOW, COLOR_BLACK);
+    init_pair(4, COLOR_CYAN, COLOR_BLACK);
+}
+
+
+void close_ncurses() {
+    endwin();
+}
+
+
+void print_title() {
+    attron(A_BOLD | COLOR_PAIR(4));
+
+    mvprintw(2, 10,  "    /\\      | |      | |    |  _____|  | |\\    | |");
+    mvprintw(3, 10,  "   /  \\     | |      | |    |  |____   | | \\   | |");
+    mvprintw(4, 10,  "  / /\\ \\   | |      | |    |  |____|  | |  \\  | |");
+    mvprintw(5, 10,  " / ____ \\   | |___   | |    |  |____   | |   \\ | |");
+    mvprintw(6, 10,  "/_/    \\_\\ |_____|  |_|    |_______|  |_|    \\| |");
+    attroff(A_BOLD | COLOR_PAIR(4));
+}
+
+
+
+void select_arme(arma_t *arme, arma_t *arme_selectate, int *num_selectate) {
+    int highlight = 0;
+    *num_selectate = 0;
+    clear();
+    while (*num_selectate < MAX_SELECT_ARME) {
+        clear();
+        mvprintw(10, 10, "Selectează armele (ENTER pentru a alege, 'q' pentru a termina)");
+        for (int i = 0; i < NUM_ARME; i++) {
+            if (i == highlight) attron(A_REVERSE);
+            mvprintw(12 + i * 2, 15, "%s", arme[i].nume);
+            attroff(A_REVERSE);
+        }
+        refresh();
+        int key = getch();
+        switch (key) {
+            case KEY_UP:
+                highlight = (highlight == 0) ? NUM_ARME - 1 : highlight - 1;
+                break;
+            case KEY_DOWN:
+                highlight = (highlight == NUM_ARME - 1) ? 0 : highlight + 1;
+                break;
+            case ENTER:
+                arme_selectate[*num_selectate] = arme[highlight];
+                (*num_selectate)++;
+                break;
+            case 'q':
+                return;
+        }
+    }
+}
+void print_menu(int highlight) {
+    char *choices[] = {"Single Player", "Multiplayer", "Exit"};
+    int n_choices = sizeof(choices) / sizeof(choices[0]);
+
+    for (int i = 0; i < n_choices; i++) {
+        if (i == highlight)
+            attron(A_REVERSE);
+        mvprintw(12 + i * 2, 15, "%s", choices[i]);
+        attroff(A_REVERSE);
+    }
+}
+void single_player_mode() {
+    clear();
+    refresh();
+
+    arma_t arme[NUM_ARME];
+    arma_t arme_selectate[MAX_SELECT_ARME];
+    int num_selectate;
+
+    init_arme(arme);
+    select_arme(arme, arme_selectate, &num_selectate);
+
+    alien_t *aliens = malloc(NUMBER_OF_ALIENS * sizeof(alien_t));
+    if (!aliens) {
+        endwin();
+        printf("Eroare: alocare memorie eșuată!\n");
+        exit(1);
+    }
+
+    initialize_random();
+    createAliens(aliens);
+    draw_spaceship(COLS / 2 - 4, LINES - 7);
+    printAliens(aliens);
+    move_spaceship();
+
+    getch();
+    free(aliens);
+}
+
+int main() {
+    int choice = 0;
+    int key;
+
+    init_ncurses();
+
+    while (1) {
+        clear();
+        print_title();
+        print_menu(choice);
+        refresh();
+
+        key = getch();
+        switch (key) {
+            case KEY_UP:
+                choice = (choice == 0) ? 1 : 0;
+                break;
+            case KEY_DOWN:
+                choice = (choice == 1) ? 0 : 1;
+                break;
+            case ENTER:
+                if (choice == 1) {
+                    close_ncurses();
+                    return 0;
+                } else if (choice == 0) {
+                    single_player_mode();
+                }
+                break;
+        }
+        napms(50);
+    }
+
+    close_ncurses();
+    return 0;
+}
+#include "arms.h"
+#include "aliens.h"
+#include "nava.h"
+#include <ncurses.h>
+#include <stdlib.h>
+#include <time.h>
+#include <stdio.h>
+
+#define ENTER 10
+#define NUM_ARME 5
+#define MAX_SELECT_PER_ARME 20
+#define MAX_TOTAL_ARME 80
+#define NUMBER_OF_ALIENS 10
+
+void init_ncurses() {
+    initscr();
+    start_color();
+    cbreak();
+    noecho();
+    curs_set(0);
+    keypad(stdscr, TRUE);
+    init_pair(1, COLOR_RED, COLOR_BLACK);
+    init_pair(2, COLOR_BLUE, COLOR_BLACK);
+    init_pair(3, COLOR_YELLOW, COLOR_BLACK);
+    init_pair(4, COLOR_CYAN, COLOR_BLACK);
+}
+
+void close_ncurses() {
+    endwin();
+}
+
+void print_title() {
+    attron(A_BOLD | COLOR_PAIR(4));
+    mvprintw(2, 10, "  /\\     | |     | |   | _____|  | |\\   | |");
+    mvprintw(3, 10, " /  \\    | |     | |   | |____   | | \\  | |");
+    mvprintw(4, 10, " / /\\ \\   | |     | |   | |____|  | |  \\ | |");
+    mvprintw(5, 10, " / ____ \\  | |___  | |   | |____   | |   \\| |");
+    mvprintw(6, 10,"/_/    \\_\\ |_____| |_|   |_______|  |_|    \\| |");
+    attroff(A_BOLD | COLOR_PAIR(4));
+}
+
+void select_arme(arma_t *arme, arma_t *arme_selectate, int *num_selectate) {
+    int highlight = 0;
+    *num_selectate = 0;
+    int counts[NUM_ARME] = {0}; // Keep track of the count for each weapon
+    clear();
+
+    mvprintw(10, 10, "Select your weapons (UP/DOWN to navigate, ENTER to add, 'q' to finish)");
+    mvprintw(11, 10, "You can select a maximum of %d of each weapon and a total of %d weapons.", MAX_SELECT_PER_ARME, MAX_TOTAL_ARME);
+
+    while (*num_selectate < MAX_TOTAL_ARME) {
+        clear();
+        mvprintw(10, 10, "Select your weapons (UP/DOWN to navigate, ENTER to add, 'q' to finish)");
+        mvprintw(11, 10, "You can select a maximum of %d of each weapon and a total of %d weapons.", MAX_SELECT_PER_ARME, MAX_TOTAL_ARME);
+
+        for (int i = 0; i < NUM_ARME; i++) {
+            if (i == highlight) attron(A_REVERSE);
+            mvprintw(13 + i * 2, 15, "%s (%d/%d)", arme[i].nume, counts[i], MAX_SELECT_PER_ARME);
+            attroff(A_REVERSE);
+        }
+        mvprintw(13 + NUM_ARME * 2 + 2, 15, "Total weapons selected: %d/%d", *num_selectate, MAX_TOTAL_ARME);
+        refresh();
+
+        int key = getch();
+        switch (key) {
+            case KEY_UP:
+                highlight = (highlight == 0) ? NUM_ARME - 1 : highlight - 1;
+                break;
+            case KEY_DOWN:
+                highlight = (highlight == NUM_ARME - 1) ? 0 : highlight + 1;
+                break;
+            case ENTER:
+                if (counts[highlight] < MAX_SELECT_PER_ARME && *num_selectate < MAX_TOTAL_ARME) {
+                    arme_selectate[*num_selectate] = arme[highlight];
+                    counts[highlight]++;
+                    (*num_selectate)++;
+                } else if (counts[highlight] >= MAX_SELECT_PER_ARME) {
+                    mvprintw(LINES - 2, 0, "You have reached the maximum limit for %s.", arme[highlight].nume);
+                    refresh();
+                    napms(1000);
+                    clear();
+                } else if (*num_selectate >= MAX_TOTAL_ARME) {
+                    mvprintw(LINES - 2, 0, "You have reached the maximum total number of weapons.");
+                    refresh();
+                    napms(1000);
+                    clear();
+                }
+                break;
+            case 'q':
+                return;
+        }
+    }
+    mvprintw(LINES - 2, 0, "You have selected the maximum number of weapons. Press any key to continue.");
+    refresh();
+    getch();
+}
+
+void print_menu(int highlight) {
+    char *choices[] = {"Single Player", "Multiplayer", "Exit"};
+    int n_choices = sizeof(choices) / sizeof(choices[0]);
+
+    mvprintw(10, 10, "Welcome to Alien Invasion!");
+    mvprintw(11, 10, "Please select a game mode:");
+
+    for (int i = 0; i < n_choices; i++) {
+        if (i == highlight)
+            attron(A_REVERSE);
+        mvprintw(13 + i * 2, 15, "%s", choices[i]);
+        attroff(A_REVERSE);
+    }
+}
+
+void single_player_mode() {
+    clear();
+    refresh();
+
+    arma_t arme[NUM_ARME];
+    arma_t arme_selectate[MAX_TOTAL_ARME]; // Increased size to accommodate total limit
+    int num_selectate = 0;
+
+    init_arme(arme);
+    select_arme(arme, arme_selectate, &num_selectate);
+
+    clear();
+    mvprintw(10, 10, "You have selected the following weapons (%d total):", num_selectate);
+    for (int i = 0; i < num_selectate; i++) {
+        mvprintw(11 + i, 15, "- %s", arme_selectate[i].nume);
+    }
+    mvprintw(11 + num_selectate + 2, 10, "Press any key to start the game...");
+    refresh();
+    getch();
+
+    // Initialize ncurses again for game session
+    init_ncurses(); 
+
+    alien_t *aliens = malloc(NUMBER_OF_ALIENS * sizeof(alien_t));
+    if (!aliens) {
+        endwin();
+        printf("Error: memory allocation failed!\n");
+        exit(1);
+    }
+
+    // Initialize random generator for aliens and game elements
+    initialize_random();
+    createAliens(aliens);
+    draw_spaceship(COLS / 2 - 3, LINES - 7);  // Draw the spaceship
+    printAliens(aliens);  // Draw aliens
+    move_spaceship();  // Handle spaceship movement
+
+    getch();  // Wait for input to finish the game
+    free(aliens);  // Free allocated memory for aliens
+    close_ncurses();  // Close ncurses when the single player mode ends
+}
+
+int main() {
+    int choice = 0;
+    int key;
+
+    init_ncurses(); // Initialize ncurses at the start of main
+
+    while (1) {
+        clear();
+        print_title();
+        print_menu(choice);
+        refresh();
+
+        key = getch();
+        switch (key) {
+            case KEY_UP:
+                choice = (choice == 0) ? 2 : choice - 1;
+                break;
+            case KEY_DOWN:
+                choice = (choice == 2) ? 0 : choice + 1;
+                break;
+            case ENTER:
+                if (choice == 2) {
+                    close_ncurses();
+                    return 0;
+                } else if (choice == 0) {
+                    single_player_mode();
+                } else if (choice == 1) {
+                    clear();
+                    mvprintw(10, 10, "Multiplayer mode is not implemented yet.");
+                    mvprintw(11, 10, "Press any key to return to the main menu.");
+                    refresh();
+                    getch();
+                }
+                break;
+        }
+        napms(50);  // Smooth navigation
+    }
+
+    close_ncurses();  // Close ncurses after main loop ends
+    return 0;
+}
