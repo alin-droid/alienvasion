@@ -131,8 +131,9 @@ void move_projectiles() {
                     break;
             }
 
-         
-            if (projectiles[i].x < 0 || projectiles[i].x >= COLS || projectiles[i].y < 0 || projectiles[i].y >= LINES) {
+            // Check if projectile is out of bounds or in the status area
+            if (projectiles[i].x < 0 || projectiles[i].x >= COLS || 
+                projectiles[i].y < 0 || projectiles[i].y >= LINES - 3) {
                 projectiles[i].is_active = 0;
             }
         }

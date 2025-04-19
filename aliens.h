@@ -1,7 +1,7 @@
 
 #ifndef ALIENS_H
 #define ALIENS_H
-#define ALIEN_MOVE_DELAY 600 
+#define ALIEN_MOVE_DELAY 700 
 #define ALIEN_SPAWN_INTERVAL 5000
 #define NUMBER_OF_ALIENS 30 
 #define ALIVE 1
