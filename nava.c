@@ -1,6 +1,19 @@
 #include <ncurses.h>
 #include "nava.h"
 
+#define POLE_STATE_RED 1
+#define POLE_STATE_BLUE 2
+
+typedef struct {
+    int x, y;
+    int height;
+    int state;
+    int is_flashing;
+    int flash_timer;
+} warning_pole_t;
+
+warning_pole_t warning_pole;
+
 void draw_spaceship(int x, int y) {
     mvprintw(y, x,    "  /\\  ");
     mvprintw(y+1, x,  " /  \\ ");
@@ -49,4 +62,48 @@ void move_spaceship() {
 
         napms(50);
     }
+}
+
+void init_warning_pole(int x, int y) {
+    warning_pole.x = x;
+    warning_pole.y = y;
+    warning_pole.height = 16;
+    warning_pole.state = POLE_STATE_RED;
+    warning_pole.is_flashing = 1;
+    warning_pole.flash_timer = 0;
+}
+
+void draw_warning_pole() {
+    int color_pair;
+    
+    if (warning_pole.state == POLE_STATE_RED) {
+        color_pair = 1;
+    } else {
+        color_pair = 2;
+    }
+    
+    attron(COLOR_PAIR(7) | A_BOLD);
+    mvprintw(warning_pole.y + warning_pole.height, warning_pole.x - 2, "=========");
+    mvprintw(warning_pole.y + warning_pole.height + 1, warning_pole.x, "=====");
+    attroff(COLOR_PAIR(7) | A_BOLD);
+    
+    attron(COLOR_PAIR(7) | A_BOLD);
+    for (int i = 1; i < warning_pole.height; i++) {
+        mvprintw(warning_pole.y + i, warning_pole.x + 1, "||");
+    }
+    attroff(COLOR_PAIR(7) | A_BOLD);
+
+    if (!warning_pole.is_flashing || (warning_pole.flash_timer < 15)) {
+        attron(COLOR_PAIR(color_pair) | A_BOLD);
+        mvprintw(warning_pole.y, warning_pole.x - 1, "[=====]");
+        attroff(COLOR_PAIR(color_pair) | A_BOLD);
+    }
+    
+    warning_pole.flash_timer = (warning_pole.flash_timer + 1) % 30;
+}
+
+void set_warning_pole_state(int state) {
+    warning_pole.state = state;
+    warning_pole.flash_timer = 0;  
+    warning_pole.is_flashing = 1;
 }

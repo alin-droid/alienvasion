@@ -3,19 +3,19 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <math.h>
 #include "aliens.h"
 #include "arms.h"
 #include "nava.h"
 
 #define ENTER 10
-#define NUM_ARME_DISPONIBILE 5
+#define NUM_ARME_DISPONIBILE 4
 #define MAX_ARME_PER_SELECTIE 20
 #define MAX_TOTAL_ARME_SELECTATE 80
 #define MAX_PROJECTILE 100
 #define ARME_PER_SELECTIE 4
-#define TOTAL_ALIENS_TO_KILL 30  // Total aliens to kill to win the game
+#define TOTAL_ALIENS_TO_KILL 10
 
-// Function to draw table border
 void draw_table(int y, int x, int height, int width) {
     mvaddch(y, x, ACS_ULCORNER);
     mvaddch(y, x + width - 1, ACS_URCORNER);
@@ -33,7 +33,6 @@ void draw_table(int y, int x, int height, int width) {
     }
 }
 
-// Function to draw horizontal divider in table
 void draw_table_divider(int y, int x, int width) {
     mvaddch(y, x, ACS_LTEE);
     for (int i = 1; i < width - 1; i++) {
@@ -42,7 +41,6 @@ void draw_table_divider(int y, int x, int width) {
     mvaddch(y, x + width - 1, ACS_RTEE);
 }
 
-// Function to get weapon description based on weapon name
 void get_weapon_description(arma_t weapon, char* desc_buffer, int buffer_size) {
     if (strstr(weapon.nume, "Laser") != NULL) {
         strncpy(desc_buffer, "High precision weapon with moderate damage", buffer_size - 1);
@@ -57,7 +55,7 @@ void get_weapon_description(arma_t weapon, char* desc_buffer, int buffer_size) {
     } else {
         strncpy(desc_buffer, "Standard alien hunting weapon", buffer_size - 1);
     }
-    desc_buffer[buffer_size - 1] = '\0'; // Ensure null termination
+    desc_buffer[buffer_size - 1] = '\0';
 }
 
 void init_ncurses() {
@@ -73,6 +71,7 @@ void init_ncurses() {
     init_pair(4, COLOR_CYAN, COLOR_BLACK);
     init_pair(5, COLOR_GREEN, COLOR_BLACK);
     init_pair(6, COLOR_MAGENTA, COLOR_BLACK);
+    init_pair(7, COLOR_WHITE, COLOR_BLACK);
     timeout(-1);
 }
 
@@ -84,9 +83,8 @@ void print_title() {
     int title_y = 2;
     int title_x = 10;
     int title_height = 6;
-    int title_width = 50;  // Increased width
+    int title_width = 50;
     
-    // Draw table around title
     attron(COLOR_PAIR(4));
     draw_table(title_y-1, title_x-2, title_height+2, title_width);
     attroff(COLOR_PAIR(4));
@@ -106,26 +104,22 @@ void print_menu(int highlight) {
     
     int menu_y = 10;
     int menu_x = 10;
-    int menu_width = 40;  // Increased width
+    int menu_width = 40;
     int menu_height = n_choices * 2 + 4;
     
-    // Draw menu table
     attron(COLOR_PAIR(2));
     draw_table(menu_y-1, menu_x-1, menu_height, menu_width);
     attroff(COLOR_PAIR(2));
     
-    // Table header
     attron(COLOR_PAIR(3) | A_BOLD);
     mvprintw(menu_y, menu_x, "Welcome to Alien Invasion!");
     mvprintw(menu_y+1, menu_x, "Please select a game mode:");
     attroff(COLOR_PAIR(3) | A_BOLD);
     
-    // Divider after header
     attron(COLOR_PAIR(2));
     draw_table_divider(menu_y+2, menu_x-1, menu_width);
     attroff(COLOR_PAIR(2));
 
-    // Menu options
     for (int i = 0; i < n_choices; i++) {
         if (i == highlight) attron(A_REVERSE);
         mvprintw(menu_y + 3 + i * 2, menu_x + 10, "%s", choices[i]);
@@ -136,47 +130,40 @@ void print_menu(int highlight) {
 void select_arme(arma_t *arme, arma_t *arme_selectate, int *num_arme_selectate) {
     int highlight = 0;
     *num_arme_selectate = 0;
-    int total_weapons_to_select = 5; // Limit the player to 5 weapons total
+    int total_weapons_to_select = 5;
     clear();
 
     int menu_height = NUM_ARME_DISPONIBILE + 8;
-    int menu_width = 70;  // Wider table to fit all text
+    int menu_width = 70;
     int start_y = (LINES - menu_height) / 2;
     int start_x = (COLS - menu_width) / 2;
 
     while (*num_arme_selectate < total_weapons_to_select) {
         clear();
         
-        // Draw weapons selection table
         attron(COLOR_PAIR(5));
         draw_table(start_y, start_x, menu_height, menu_width);
         attroff(COLOR_PAIR(5));
         
-        // Table header
         attron(COLOR_PAIR(3) | A_BOLD);
         mvprintw(start_y + 1, start_x + (menu_width - 14) / 2, "WEAPON SELECTION");
         attroff(COLOR_PAIR(3) | A_BOLD);
         
-        // Instructions row
         mvprintw(start_y + 3, start_x + 2, "Use UP/DOWN to navigate, ENTER to select");
         mvprintw(start_y + 4, start_x + 2, "Weapons selected: %d/%d", *num_arme_selectate, total_weapons_to_select);
         
-        // Header divider
         attron(COLOR_PAIR(5));
         draw_table_divider(start_y + 5, start_x, menu_width);
         attroff(COLOR_PAIR(5));
         
-        // Column headers
         attron(A_BOLD);
         mvprintw(start_y + 6, start_x + 2, "%-15s | %-10s | %s", "WEAPON", "DAMAGE", "DESCRIPTION");
         attroff(A_BOLD);
         
-        // Column header divider
         attron(COLOR_PAIR(5));
         draw_table_divider(start_y + 7, start_x, menu_width);
         attroff(COLOR_PAIR(5));
         
-        // Weapon list
         for (int i = 0; i < NUM_ARME_DISPONIBILE; i++) {
             char desc[40];
             get_weapon_description(arme[i], desc, sizeof(desc));
@@ -203,7 +190,6 @@ void select_arme(arma_t *arme, arma_t *arme_selectate, int *num_arme_selectate) 
                 arme_selectate[*num_arme_selectate] = arme[highlight];
                 (*num_arme_selectate)++;
                 
-                // Visual feedback
                 attron(COLOR_PAIR(5) | A_BOLD);
                 mvprintw(start_y + menu_height - 2, start_x + 2, "Added %s! (%d/%d)", 
                         arme[highlight].nume, *num_arme_selectate, total_weapons_to_select);
@@ -213,7 +199,6 @@ void select_arme(arma_t *arme, arma_t *arme_selectate, int *num_arme_selectate) 
             }
         }
         
-        // If we've selected all required weapons, show a message
         if (*num_arme_selectate >= total_weapons_to_select) {
             attron(COLOR_PAIR(3) | A_BOLD);
             mvprintw(start_y + menu_height - 2, start_x + 2, "All weapons selected! Press any key to start.");
@@ -232,20 +217,16 @@ void draw_weapon_panel(arma_t *arme_selectate, int num_arme_selectate, int curre
     int start_x = 2;
     int start_y = 1;
     
-    // Draw panel table
     attron(COLOR_PAIR(6));
     draw_table(start_y, start_x, panel_height, panel_width);
     attroff(COLOR_PAIR(6));
     
-    // Panel title
     attron(COLOR_PAIR(6) | A_BOLD);
     mvprintw(start_y + 1, start_x + 2, "CURRENT WEAPON");
     
-    // Title divider
     draw_table_divider(start_y + 2, start_x, panel_width);
     attroff(COLOR_PAIR(6) | A_BOLD);
     
-    // Current weapon info
     attron(COLOR_PAIR(3) | A_BOLD);
     mvprintw(start_y + 3, start_x + 2, "%-15s", arme_selectate[current_weapon].nume);
     attroff(COLOR_PAIR(3) | A_BOLD);
@@ -257,29 +238,24 @@ void draw_weapon_panel(arma_t *arme_selectate, int num_arme_selectate, int curre
 void draw_game_status(int aliens_killed, int alien_count) {
     int status_width = 50;
     int status_height = 5;
-    int start_x = COLS - status_width - 2;  // Align to right side with small margin
+    int start_x = COLS - status_width - 2;
     int start_y = 1;
     
-    // Draw status table
     attron(COLOR_PAIR(5));
     draw_table(start_y, start_x, status_height, status_width);
     attroff(COLOR_PAIR(5));
     
-    // Status title
     attron(COLOR_PAIR(5) | A_BOLD);
     mvprintw(start_y + 1, start_x + (status_width - 11)/2, "GAME STATUS");
     
-    // Title divider
     draw_table_divider(start_y + 2, start_x, status_width);
     attroff(COLOR_PAIR(5) | A_BOLD);
     
-    // Status info
     attron(COLOR_PAIR(5));
     mvprintw(start_y + 3, start_x + 5, "ALIENS KILLED: %d/%d    ALIENS ACTIVE: %d", 
              aliens_killed, TOTAL_ALIENS_TO_KILL, alien_count);
     attroff(COLOR_PAIR(5));
     
-    // Progress bar
     int progress_width = status_width - 10;
     int filled = (aliens_killed * progress_width) / TOTAL_ALIENS_TO_KILL;
     
@@ -298,7 +274,6 @@ void draw_controls_panel() {
     int start_x = (COLS - controls_width) / 2;
     int start_y = LINES - 2;
     
-    // Controls info
     attron(A_DIM);
     mvprintw(start_y, start_x, "ENTER: change weapon | SPACE: fire | ←→: move ship | Q: quit");
     attroff(A_DIM);
@@ -311,6 +286,7 @@ void single_player_mode() {
     init_pair(4, COLOR_CYAN, COLOR_BLACK);
     init_pair(5, COLOR_GREEN, COLOR_BLACK);
     init_pair(6, COLOR_MAGENTA, COLOR_BLACK);
+    init_pair(7, COLOR_WHITE, COLOR_BLACK);
     timeout(20);
 
     clear();
@@ -335,18 +311,22 @@ void single_player_mode() {
     createAliens(aliens);
     init_projectiles();
 
-    // Define status area height and top panel height
     int status_area_height = 3;
-    int panel_height = 8;  // Height of the top panel
+    int panel_height = 8;
     
-    // Position the ship above the green line (status area)
     int ship_x = COLS / 2 - 3;
-    int ship_y = LINES - status_area_height - 8; // Position ship above the status area
+    int ship_y = LINES - status_area_height - 8;
+    
+    init_warning_pole(COLS - 20, LINES - status_area_height - 16 - 5);
+    
+    boss_t boss;
+    int boss_initialized = 0;
     
     int current_weapon = 0;
     int alien_count = NUMBER_OF_ALIENS;
     int aliens_killed = 0;
     int game_over = 0;
+    int boss_phase = 0;
 
     time_t last_alien_move = time(NULL);
     time_t last_alien_spawn = time(NULL);
@@ -354,11 +334,9 @@ void single_player_mode() {
     while (!game_over) {
         clear();
 
-        // Draw weapon and status panels at the top
         draw_weapon_panel(arme_selectate, num_arme_selectate, current_weapon);
         draw_game_status(aliens_killed, alien_count);
 
-        // Draw a boundary line for the status area at the bottom with GREEN color
         attron(COLOR_PAIR(5) | A_BOLD);
         for (int i = 0; i < COLS; i++) {
             mvaddch(LINES - status_area_height, i, ACS_HLINE);
@@ -366,38 +344,164 @@ void single_player_mode() {
         attroff(COLOR_PAIR(5) | A_BOLD);
 
         time_t current_time = time(NULL);
-        if (current_time - last_alien_move >= ((double)ALIEN_MOVE_DELAY / 1000.0)) {
-            moveAliens(aliens);
-            last_alien_move = current_time;
-        }
+        
+        if (boss_phase == 0) {
+            if (current_time - last_alien_move >= ((double)ALIEN_MOVE_DELAY / 1000.0)) {
+                moveAliens(aliens);
+                last_alien_move = current_time;
+            }
 
-        if (current_time - last_alien_spawn >= ((double)ALIEN_SPAWN_INTERVAL / 1000.0)) {
-            regenerate_aliens(aliens, &alien_count);
-            last_alien_spawn = current_time;
+            if (current_time - last_alien_spawn >= ((double)ALIEN_SPAWN_INTERVAL / 1000.0)) {
+                regenerate_aliens(aliens, &alien_count);
+                last_alien_spawn = current_time;
+            }
         }
 
         move_projectiles();
 
         for (int i = 0; i < MAX_PROJECTILE; i++) {
             if (projectiles[i].is_active) {
-                if (check_projectile_collision(projectiles[i].x, projectiles[i].y, aliens, &alien_count)) {
+                if (boss_phase == 0 && check_projectile_collision(projectiles[i].x, projectiles[i].y, aliens, &alien_count)) {
                     projectiles[i].is_active = 0;
                     aliens_killed++;
+                    
+                    if (aliens_killed >= TOTAL_ALIENS_TO_KILL && boss_phase == 0) {
+                        set_warning_pole_state(POLE_STATE_BLUE);
+                        
+                        for (int j = 0; j < NUMBER_OF_ALIENS; j++) {
+                            aliens[j].isalive = DEAD;
+                            aliens[j].x = -100;
+                            aliens[j].y = -100;
+                        }
+                        alien_count = 0;
+                        
+                        clear();
+                        
+                        for (int j = 0; j < 5; j++) {
+                            clear();
+                            attron(COLOR_PAIR(5) | A_BOLD);
+                            for (int k = 0; k < COLS; k++) {
+                                mvaddch(LINES - status_area_height, k, ACS_HLINE);
+                            }
+                            attroff(COLOR_PAIR(5) | A_BOLD);
+                            
+                            draw_spaceship(ship_x, ship_y);
+                            draw_warning_pole();
+                            
+                            attron(COLOR_PAIR(2) | A_BOLD | (j % 2 ? A_BLINK : 0));
+                            mvprintw(LINES / 2 - 2, COLS / 2 - 25, "ALL NORMAL ALIENS HAVE BEEN ELIMINATED!");
+                            attroff(A_BLINK);
+                            mvprintw(LINES / 2, COLS / 2 - 30, "WARNING POLE SIGNALS THE ARRIVAL OF THE FINAL BOSS!");
+                            mvprintw(LINES / 2 + 2, COLS / 2 - 12, "AMMUNITION HAS BEEN RELOADED");
+                            attroff(COLOR_PAIR(2) | A_BOLD);
+                            
+                            refresh();
+                            napms(800);
+                        }
+                        
+                        clear();
+                        draw_spaceship(ship_x, ship_y);
+                        draw_warning_pole();
+                        
+                        attron(COLOR_PAIR(1) | A_BOLD | A_BLINK);
+                        mvprintw(LINES / 2 - 5, COLS / 2 - 20, "!!! WARNING !!! WARNING !!! WARNING !!!");
+                        attroff(A_BLINK);
+                        mvprintw(LINES / 2 - 3, COLS / 2 - 18, "A POWERFUL PRESENCE DETECTED!");
+                        mvprintw(LINES / 2 - 1, COLS / 2 - 10, "FINAL BOSS APPROACHING!");
+                        mvprintw(LINES / 2 + 2, COLS / 2 - 18, "PREPARE FOR THE ULTIMATE BATTLE!");
+                        attroff(COLOR_PAIR(1) | A_BOLD);
+                        
+                        refresh();
+                        napms(2000);
+                        
+                        init_boss(&boss, COLS);
+                        boss_initialized = 1;
+                        
+                        for (int j = 0; j < 10; j++) {
+                            clear();
+                            draw_spaceship(ship_x + (rand() % 3 - 1), ship_y + (rand() % 3 - 1));
+                            draw_warning_pole();
+                            
+                            if (j > 5) {
+                                boss.y = 12;
+                                attron(COLOR_PAIR(1) | A_BOLD);
+                                mvprintw(boss.y + 4, boss.x + 5, ">>> INCOMING <<<");
+                                attroff(COLOR_PAIR(1) | A_BOLD);
+                            }
+                            
+                            refresh();
+                            napms(200);
+                        }
+                        
+                        boss_phase = 1;
+                        
+                        clear();
+                        draw_spaceship(ship_x, ship_y);
+                        draw_warning_pole();
+                        
+                        attron(COLOR_PAIR(3) | A_BOLD);
+                        mvprintw(LINES / 2, COLS / 2 - 15, "RELOADING WEAPONS...");
+                        attroff(COLOR_PAIR(3) | A_BOLD);
+                        refresh();
+                        
+                        for (int j = 0; j < num_arme_selectate; j++) {
+                            for (int k = 0; k <= 30; k++) {
+                                attron(COLOR_PAIR(3));
+                                mvprintw(LINES / 2 + 2 + j, COLS / 2 - 25, "%s: [", arme_selectate[j].nume);
+                                
+                                for (int l = 0; l < 30; l++) {
+                                    if (l < k) addch('|');
+                                    else addch(' ');
+                                }
+                                
+                                printw("] %d%%", (k * 100) / 30);
+                                attroff(COLOR_PAIR(3));
+                                refresh();
+                                napms(10);
+                            }
+                            
+                            arme_selectate[j].gloanțe_disp = 30;
+                        }
+                        
+                        attron(COLOR_PAIR(3) | A_BOLD);
+                        mvprintw(LINES / 2 + 2 + num_arme_selectate, COLS / 2 - 10, "RELOAD COMPLETE!");
+                        attroff(COLOR_PAIR(3) | A_BOLD);
+                        refresh();
+                        napms(1000);
+                    }
+                }
+                else if (boss_phase == 1 && boss_initialized && boss.isalive) {
+                    int result = check_boss_collision(projectiles[i].x, projectiles[i].y, &boss);
+                    if (result > 0) {
+                        projectiles[i].is_active = 0;
+                        
+                        if (result == 2) {
+                            aliens_killed++;
+                        }
+                    }
                 }
             }
         }
 
-        // Draw game elements
         draw_projectiles();  
-        printAliens(aliens);
+        
+        if (boss_phase == 0) {
+            printAliens(aliens);
+        }
+        
         draw_spaceship(ship_x, ship_y);
+        draw_warning_pole();
+        
+        if (boss_phase == 1 && boss_initialized && boss.isalive) {
+            enhanced_move_boss(&boss, COLS);
+            boss_attack(&boss, &projectile_count);
+            draw_boss(&boss);
+        }
 
-        // Draw controls panel
         draw_controls_panel();
 
-        // Show weapon info in bottom status area
         attron(COLOR_PAIR(3) | A_BOLD);
-        mvprintw(LINES - status_area_height + 1, 2, "Arma: %s (Damage: %d, Ammo: %d)",
+        mvprintw(LINES - status_area_height + 1, 2, "Weapon: %s (Damage: %d, Ammo: %d)",
                  arme_selectate[current_weapon].nume,
                  arme_selectate[current_weapon].damage,
                  arme_selectate[current_weapon].gloanțe_disp);
@@ -405,23 +509,29 @@ void single_player_mode() {
 
         refresh();
 
-        usleep(16666);  // ~60 FPS
+        usleep(16666);
 
         int ch = getch();
         switch (ch) {
             case KEY_LEFT:
-                if (ship_x > 0) ship_x -= 1;
+                if (ship_x > 0) {
+                    ship_x -= 1;
+                }
                 break;
             case KEY_RIGHT:
-                if (ship_x < COLS - 7) ship_x += 1;
+                if (ship_x < COLS - 7) {
+                    ship_x += 1;
+                }
                 break;
             case KEY_UP:
-                // Limit upward movement to not go too high
-                if (ship_y > panel_height + 2) ship_y -= 1;
+                if (ship_y > panel_height + 2) {
+                    ship_y -= 1;
+                }
                 break;
             case KEY_DOWN:
-                // Limit downward movement to stay above the status area
-                if (ship_y < LINES - status_area_height - 7) ship_y += 1;
+                if (ship_y < LINES - status_area_height - 7) {
+                    ship_y += 1;
+                }
                 break;
             case ' ':
                 if (current_weapon < num_arme_selectate && arme_selectate[current_weapon].gloanțe_disp > 0) {
@@ -430,7 +540,7 @@ void single_player_mode() {
                         ship_x + 3,
                         ship_y - 1,
                         arme_selectate[current_weapon].damage,
-                        2,  // Direction is up
+                        2,
                         arme_selectate[current_weapon].damage % 4 + 1,
                         &projectile_count,
                         &arme_selectate[current_weapon]
@@ -455,47 +565,123 @@ void single_player_mode() {
                 break;
         }
 
-        // Check winning condition
-        if (aliens_killed >= TOTAL_ALIENS_TO_KILL) {
-            // Create a victory message box
+        if (boss_phase == 0 && check_alien_collision(aliens, ship_x, ship_y)) {
             int msg_width = 40;
             int msg_height = 5;
             int msg_x = (COLS - msg_width) / 2;
             int msg_y = (LINES - msg_height) / 2;
-            
-            attron(COLOR_PAIR(3) | A_BOLD);
+        
+            attron(COLOR_PAIR(1) | A_BOLD);
             draw_table(msg_y, msg_x, msg_height, msg_width);
-            mvprintw(msg_y + 2, msg_x + (msg_width - 30)/2, "VICTORY! ALL ALIENS DESTROYED!");
-            attroff(COLOR_PAIR(3) | A_BOLD);
-            
+            mvprintw(msg_y + 2, msg_x + (msg_width - 30)/2, "GAME OVER! SHIP DESTROYED!");
+            attroff(COLOR_PAIR(1) | A_BOLD);
+        
             refresh();
             nodelay(stdscr, FALSE);
             getch();
             game_over = 1;
         }
         
-        // Check ship collision with aliens
-        if (check_alien_collision(aliens, ship_x, ship_y)) {
-            // Create a game over message box
-            int msg_width = 40;
-            int msg_height = 5;
-            int msg_x = (COLS - msg_width) / 2;
-            int msg_y = (LINES - msg_height) / 2;
-            
-            attron(COLOR_PAIR(1) | A_BOLD);
-            draw_table(msg_y, msg_x, msg_height, msg_width);
-            mvprintw(msg_y + 2, msg_x + (msg_width - 30)/2, "GAME OVER! SHIP DESTROYED!");
-            attroff(COLOR_PAIR(1) | A_BOLD);
-            
-            refresh();
+        
+        if (boss_phase == 1 && boss_initialized && boss.isalive) {
+            if (check_ship_boss_collision(ship_x, ship_y, &boss)) {
+                int msg_width = 40;
+                int msg_height = 5;
+                int msg_x = (COLS - msg_width) / 2;
+                int msg_y = (LINES - msg_height) / 2;
+        
+                attron(COLOR_PAIR(1) | A_BOLD);
+                draw_table(msg_y, msg_x, msg_height, msg_width);
+                mvprintw(msg_y + 2, msg_x + (msg_width - 35)/2, "GAME OVER! HIT BY FINAL BOSS!");
+                attroff(COLOR_PAIR(1) | A_BOLD);
+        
+                refresh();
+                nodelay(stdscr, FALSE);
+                getch();
+                game_over = 1;
+            }
+        }
+        
+        if (boss_phase == 1 && boss_initialized && !boss.isalive) {
+            for (int i = 0; i < 5; i++) {
+                clear();
+                draw_spaceship(ship_x, ship_y);
+                draw_warning_pole();
+        
+                attron(COLOR_PAIR(1 + i % 3) | A_BOLD);
+                for (int r = i; r < 15; r += 2) {
+                    for (int angle = 0; angle < 360; angle += 40) {
+                        double rad = angle * 3.14159265 / 180.0;
+                        int explosion_x = boss.x + 12 + (int)(r * cos(rad));
+                        int explosion_y = boss.y + 4 + (int)(r * sin(rad) / 2);
+                        if (explosion_x >= 0 && explosion_x < COLS && explosion_y >= 0 && explosion_y < LINES) {
+                            mvaddch(explosion_y, explosion_x, '*');
+                        }
+                    }
+                }
+                attroff(COLOR_PAIR(1 + i % 3) | A_BOLD);
+        
+                refresh();
+                napms(150);
+            }
+        
+            for (int i = 0; i < 20; i++) {
+                clear();
+                draw_spaceship(ship_x, ship_y);
+                draw_warning_pole();
+        
+                for (int p = 0; p < 30; p++) {
+                    int px = boss.x + 12 + (p % 5) * (i + 1) * cos(p * 12);
+                    int py = boss.y + 4 + (p % 5) * (i + 1) * sin(p * 12) / 2;
+                    if (px >= 0 && px < COLS && py >= 0 && py < LINES - status_area_height) {
+                        attron(COLOR_PAIR(p % 4 + 1));
+                        mvaddch(py, px, ".*+o"[p % 4]);
+                        attroff(COLOR_PAIR(p % 4 + 1));
+                    }
+                }
+        
+                refresh();
+                napms(100);
+            }
+        
+            clear();
+        
+            for (int i = 0; i < 5; i++) {
+                clear();
+        
+                int msg_width = 60;
+                int msg_height = 12;
+                int msg_x = (COLS - msg_width) / 2;
+                int msg_y = (LINES - msg_height) / 2;
+        
+                attron(COLOR_PAIR(3) | A_BOLD);
+                draw_table(msg_y, msg_x, msg_height, msg_width);
+        
+                if (i % 2 == 0) attron(A_BLINK);
+                mvprintw(msg_y + 2, msg_x + (msg_width - 20)/2, "COMPLETE VICTORY!");
+                attroff(A_BLINK);
+        
+                mvprintw(msg_y + 4, msg_x + (msg_width - 40)/2, "THE FINAL BOSS HAS BEEN DESTROYED!");
+                mvprintw(msg_y + 6, msg_x + (msg_width - 30)/2, "Earth has been saved!");
+                mvprintw(msg_y + 8, msg_x + (msg_width - 45)/2, "Congratulations on completing your mission!");
+                mvprintw(msg_y + 10, msg_x + 5, "Aliens eliminated: %d", aliens_killed);
+                attroff(COLOR_PAIR(3) | A_BOLD);
+        
+                refresh();
+                napms(500);
+            }
+        
             nodelay(stdscr, FALSE);
+            mvprintw(LINES - 2, COLS / 2 - 15, "Press any key to continue");
+            refresh();
             getch();
             game_over = 1;
         }
     }
-
+    
+   
     nodelay(stdscr, FALSE);
-    free(aliens);
+    free(aliens);  
     timeout(-1);
 }
 
