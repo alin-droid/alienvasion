@@ -585,21 +585,24 @@ void single_player_mode() {
         
         if (boss_phase == 1 && boss_initialized && boss.isalive) {
             if (check_ship_boss_collision(ship_x, ship_y, &boss)) {
-                int msg_width = 40;
-                int msg_height = 5;
-                int msg_x = (COLS - msg_width) / 2;
-                int msg_y = (LINES - msg_height) / 2;
-        
-                attron(COLOR_PAIR(1) | A_BOLD);
-                draw_table(msg_y, msg_x, msg_height, msg_width);
-                mvprintw(msg_y + 2, msg_x + (msg_width - 35)/2, "GAME OVER! HIT BY FINAL BOSS!");
-                attroff(COLOR_PAIR(1) | A_BOLD);
-        
-                refresh();
-                nodelay(stdscr, FALSE);
-                getch();
-                game_over = 1;
-            }
+                if (boss_phase == 1 && boss_initialized && boss.isalive) {
+                    if (check_ship_boss_collision(ship_x, ship_y, &boss)) {
+                        // Doar afișăm un mesaj că boss-ul a lovit nava, fără să încheiem jocul
+                        attron(COLOR_PAIR(3) | A_BOLD);
+                        mvprintw(ship_y - 2, ship_x - 5, "BOSS ATTACK!");
+                        attroff(COLOR_PAIR(3) | A_BOLD);
+                        
+                        // Efect vizual pentru impact
+                        for (int i = 0; i < 3; i++) {
+                            attron(COLOR_PAIR(1 + i % 3));
+                            mvaddch(ship_y - 1 + i % 3, ship_x + i % 3, '*');
+                            mvaddch(ship_y - 1 + i % 3, ship_x + 6 - i % 3, '*');
+                            attroff(COLOR_PAIR(1 + i % 3));
+                            refresh();
+                            napms(50);
+                        }
+                    }
+                }
         }
         
         if (boss_phase == 1 && boss_initialized && !boss.isalive) {
@@ -703,6 +706,7 @@ int main() {
         if (key == ENTER) {
             if (choice == 2) break;
             else if (choice == 0) single_player_mode();
+            else if (choice == 1) multiplayer_mode();  // Modul multiplayer
         }
     }
 

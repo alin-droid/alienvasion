@@ -9,7 +9,7 @@
 #define MAX_HEALTH 3
 
 #define BOSS_TYPE 5
-#define BOSS_HEALTH 20
+#define BOSS_HEALTH 50
 #define BOSS_DAMAGE 5
 
 typedef struct {

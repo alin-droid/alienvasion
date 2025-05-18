@@ -249,6 +249,7 @@ int check_alien_collision(alien_t* aliens, int ship_x, int ship_y) {
             }
         }
     }
+    
     return 0; 
 }
 
