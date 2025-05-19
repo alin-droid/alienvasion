@@ -282,213 +282,77 @@ void regenerate_aliens(alien_t* aliens, int* alien_count) {
         }
     }
 }
-
-void init_boss(boss_t* boss, int screenWidth) {
-    boss->x = screenWidth / 2 - 12;  
-    boss->y = 12;  
+void createBoss(boss_t* boss) {
+    boss->x = COLS / 2 - 5;
+    boss->y = 5;
     boss->health = BOSS_HEALTH;
     boss->isalive = ALIVE;
     boss->move_timer = 0;
-    boss->move_direction = 1; 
-    boss->attack_timer = 0;
-    boss->attack_cooldown = 50;  
+    boss->move_direction = 1;
 }
 
-void draw_boss(boss_t* boss) {
-    if (boss->isalive) {
-        
+void printBoss(boss_t* boss) {
+    if (boss->isalive == ALIVE) {
         attron(COLOR_PAIR(1) | A_BOLD);
-       mvprintw(boss->y - 1, boss->x,     "    /===========\\    ");
-        mvprintw(boss->y, boss->x,     "   /=============\\   ");
-        mvprintw(boss->y + 1, boss->x, " /=================\\ ");
-        mvprintw(boss->y + 2, boss->x, "/   (*)     (*)    \\");
-        mvprintw(boss->y + 3, boss->x, "|  |O|       |O|    |");
-        mvprintw(boss->y + 4, boss->x, "|       |V|        |");
-        mvprintw(boss->y + 5, boss->x, "|    \\=======/     |");
-        mvprintw(boss->y + 6, boss->x, "|  <============>  |");
-        mvprintw(boss->y + 7, boss->x, " \\=================/ ");
-        mvprintw(boss->y + 8, boss->x, "  \\_______________/  ");
-        
-      
-        attron(COLOR_PAIR(1) | A_BOLD | A_BLINK);
-        mvprintw(boss->y - 3, boss->x + 5, ">>> FINAL BOSS <<<");
-        attroff(A_BLINK);
-        
-        mvprintw(boss->y - 2, boss->x, "Health: [");
-        for (int i = 0; i < BOSS_HEALTH; i++) {
-            if (i < boss->health) {
-                attron(COLOR_PAIR(1));
-                addch('|');
-                attroff(COLOR_PAIR(1));
-            } else {
-                addch(' ');
-            }
-        }
-        printw("]");
-        
+        mvprintw(boss->y, boss->x,     "  /XXXXX\\  ");
+        mvprintw(boss->y + 1, boss->x, " |X  X  X| ");
+        mvprintw(boss->y + 2, boss->x, "/XXXXXXXXX\\");
+        mvprintw(boss->y + 3, boss->x, "\\X  XXX  X/");
+        mvprintw(boss->y + 4, boss->x, " \\XXXXXXX/ ");
         attroff(COLOR_PAIR(1) | A_BOLD);
     }
 }
 
-
-void move_boss(boss_t* boss, int max_x) {
-    if (boss->isalive) {
-        boss->move_timer++;
-        
-        
-        if (boss->move_timer >= 3) {
+void moveBoss(boss_t* boss) {
+    if (boss->isalive == ALIVE) {
+        boss->move_timer += 1;
+        if (boss->move_timer >= 3) { // Mișcare mai lentă decât extratereștrii normali
             boss->move_timer = 0;
-            
-         
             boss->x += boss->move_direction;
-            
-        
-            if (boss->move_timer % 10 == 0) {
-        
-                if (rand() % 4 == 0) {
-                    if (boss->y > 12 && boss->y < 20) {
-                        boss->y += (rand() % 3) - 1; 
-                    } else if (boss->y <= 12) {
-                        boss->y++;
-                    } else if (boss->y >= 20) {
-                        boss->y--;
-                    }
-                }
-            }
-            
-            
-            if (boss->x <= 0 || boss->x >= max_x - 25) {
+
+            if (boss->x <= 0 || boss->x >= COLS - 11) {
                 boss->move_direction *= -1;
             }
-        }
-        
-       
-        boss->attack_timer++;
-    }
-}
-
-
-void boss_attack(boss_t* boss, int* projectile_count) {
-    if (boss->isalive && boss->attack_timer >= boss->attack_cooldown) {
-        boss->attack_timer = 0;
-    
-        int central_offsets[] = {-8, 0, 8};
-        for (int i = 0; i < 3; i++) {
-            arma_t dummy_arma;
-            dummy_arma.damage = BOSS_DAMAGE;
-            for (int j = 0; j < 4; j++) {
-                dummy_arma.directii[j] = j;
-            }
             
-            shoot_projectile(
-                boss->x + 12 + central_offsets[i], 
-                boss->y + 9,                       
-                BOSS_DAMAGE,
-                3,     
-                1,     
-                projectile_count,
-                &dummy_arma
-            );
-        }
-        
-       
-        if (boss->attack_timer % 3 == 0) {
-           
-            int dirs[8][2] = {
-                {-1, 0}, {-1, 1}, {0, 1}, {1, 1},
-                {1, 0}, {1, -1}, {0, -1}, {-1, -1}
-            };
-            
-            for (int i = 0; i < 8; i++) {
-                arma_t dummy_arma;
-                dummy_arma.damage = BOSS_DAMAGE - 1; 
-                for (int j = 0; j < 4; j++) {
-                    dummy_arma.directii[j] = j;
-                }
+            // Mișcare aleatoare sus-jos ocazional
+            if (rand() % 10 == 0) {
+                int direction = (rand() % 2) * 2 - 1; // -1 sau 1
+                boss->y += direction;
                 
-                
-                int dir;
-                if (dirs[i][0] == -1 && dirs[i][1] == 0) dir = 0;      
-                else if (dirs[i][0] == 1 && dirs[i][1] == 0) dir = 1;  
-                else if (dirs[i][0] == 0 && dirs[i][1] == 1) dir = 3;  
-                else if (dirs[i][0] == 0 && dirs[i][1] == -1) dir = 2;
-                else dir = 3; 
-                
-                shoot_projectile(
-                    boss->x + 12,  
-                    boss->y + 5,   
-                    BOSS_DAMAGE - 1,
-                    dir,
-                    4,    
-                    projectile_count,
-                    &dummy_arma
-                );
+                // Limitează poziția pe verticală
+                if (boss->y < 3) boss->y = 3;
+                if (boss->y > LINES / 3) boss->y = LINES / 3;
             }
         }
     }
 }
 
-int check_boss_collision(int x, int y, boss_t* boss) {
-    if (boss->isalive) {
-        int width = 24;   
-        int height = 10;  
-        if (x >= boss->x && x < boss->x + width &&
-            y >= boss->y && y < boss->y + height) {
+int check_boss_collision(boss_t* boss, int ship_x, int ship_y) {
+    if (boss->isalive == ALIVE) {
+        if (boss->x < ship_x + 7 &&
+            boss->x + 11 > ship_x &&
+            boss->y < ship_y + 7 &&
+            boss->y + 5 > ship_y) {
+            return 1;
+        }
+    }
+    return 0;
+}
 
+int check_projectile_boss_collision(int x, int y, boss_t* boss) {
+    if (boss->isalive == ALIVE) {
+        if (x >= boss->x && x < boss->x + 11 &&
+            y >= boss->y && y < boss->y + 5) {
+            
             boss->health--;
+            
             if (boss->health <= 0) {
                 boss->isalive = DEAD;
-                return 2;  
+                return 2; // 2 = boss eliminat
             }
             
-            return 1;  
+            return 1; // 1 = hit
         }
     }
-    
-    return 0;  
+    return 0; // 0 = nicio coliziune
 }
-
-int check_ship_boss_collision(int ship_x, int ship_y, boss_t* boss) {
-    if (boss->isalive) {
-        int boss_width = 24;
-        int boss_height = 10;
-        int ship_width = 6;
-        int ship_height = 7;
-        if (ship_x < boss->x + boss_width &&
-            ship_x + ship_width > boss->x &&
-            ship_y < boss->y + boss_height &&
-            ship_y + ship_height > boss->y) {
-            return 1;  
-        }
-    }
-    
-    return 0; }
-
-    void enhanced_move_boss(boss_t* boss, int max_x) {
-        if (boss->isalive) {
-            int old_x = boss->x;
-            int old_y = boss->y;
-            
-            boss->x += boss->move_direction * 2;
-            
-            static int ticker = 0;
-            ticker++;
-            
-            boss->y = 12 + (int)(5 * sin(ticker * 0.1));
-            
-            if (rand() % 30 == 0) {
-                boss->move_direction *= -1;
-            }
-            
-            if (boss->x <= 0 || boss->x >= max_x - 25) {
-                boss->move_direction *= -1;
-                boss->x = old_x;
-            }
-            
-            if (boss->y < 8 || boss->y > 20) {
-                boss->y = old_y;
-            }
-            
-            boss->attack_timer += 2;
-        }
-    }

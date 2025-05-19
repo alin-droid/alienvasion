@@ -1,285 +1,312 @@
 #include "multiplayer.h"
 
-int connect_to_server(const char *server_ip) {
-    int sock = 0;
-    struct sockaddr_in serv_addr;
-    
-    // Creează socket
-    if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-        perror("Socket creation error");
-        return -1;
-    }
-    
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(SERVER_PORT);
-    
-    // Convertește adresa IP din string în format binar
-    if (inet_pton(AF_INET, server_ip, &serv_addr.sin_addr) <= 0) {
-        perror("Invalid address");
-        return -1;
-    }
-    
-    // Conectare la server
-    if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-        perror("Connection failed");
-        return -1;
-    }
-    
-    return sock;
-}
+// Variabile globale pentru multiplayer
+static int socket_fd = -1;
+static int is_host = 0;
+static int is_connected = 0;
+static int game_phase = 0;
+static pthread_t network_thread;
+static int remote_player_x = 0;
+static int remote_player_y = 0;
+static int remote_player_score = 0;
+static int remote_player_alive = 1;
 
-int select_multiplayer_mode(char *server_ip) {
-    clear();
-    
+// Structură pentru pachetul de rețea
+typedef struct {
+    int type;  // 1=poziție, 2=fază, 3=lovitură
+    int x, y;
+    int score;
+    int health;
+    int is_alive;
+    int phase;
+    int alien_count;
+    int data;
+} network_packet_t;
+
+// Declarații forward
+void multiplayer_host();
+void multiplayer_join();
+void start_multiplayer_game();
+void *network_thread_function(void *arg);
+void draw_warning_pillar(int x, int y, int color);
+
+// Funcția pentru meniul multiplayer
+void multiplayer_mode() {
     int choice = 0;
-    int max_choice = 2;
+    int key;
     
     while (1) {
         clear();
-        attron(COLOR_PAIR(4) | A_BOLD);
-        mvprintw(5, COLS/2 - 10, "MULTIPLAYER MODE");
-        attroff(COLOR_PAIR(4) | A_BOLD);
+        mvprintw(10, 10, "Multiplayer Mode:");
         
-        // Afișează opțiunile
-        for (int i = 0; i < max_choice; i++) {
-            if (i == choice) {
-                attron(A_REVERSE);
-            }
-            
-            switch (i) {
-                case 0:
-                    mvprintw(8 + i*2, COLS/2 - 5, "Host Game");
-                    break;
-                case 1:
-                    mvprintw(8 + i*2, COLS/2 - 5, "Join Game");
-                    break;
-            }
-            
-            if (i == choice) {
-                attroff(A_REVERSE);
-            }
-        }
+        if (choice == 0) attron(A_REVERSE);
+        mvprintw(12, 15, "Host Game");
+        if (choice == 0) attroff(A_REVERSE);
+        
+        if (choice == 1) attron(A_REVERSE);
+        mvprintw(14, 15, "Join Game");
+        if (choice == 1) attroff(A_REVERSE);
+        
+        if (choice == 2) attron(A_REVERSE);
+        mvprintw(16, 15, "Back");
+        if (choice == 2) attroff(A_REVERSE);
         
         refresh();
         
-        int key = getch();
-        
-        switch (key) {
-            case KEY_UP:
-                choice = (choice - 1 + max_choice) % max_choice;
-                break;
-            case KEY_DOWN:
-                choice = (choice + 1) % max_choice;
-                break;
-            case 10:  // Enter
-                if (choice == 0) {
-                    // Host Game
-                    strcpy(server_ip, "127.0.0.1");
-                    return 0;
-                } else if (choice == 1) {
-                    // Join Game
-                    clear();
-                    echo();
-                    mvprintw(8, COLS/2 - 15, "Enter server IP: ");
-                    refresh();
-                    
-                    char input[16];
-                    getstr(input);
-                    strcpy(server_ip, input);
-                    
-                    noecho();
-                    return 1;
-                }
-                break;
+        key = getch();
+        if (key == KEY_UP) choice = (choice - 1 + 3) % 3;
+        if (key == KEY_DOWN) choice = (choice + 1) % 3;
+        if (key == 10) {  // Enter key
+            if (choice == 0) {
+                multiplayer_host();
+            }
+            else if (choice == 1) {
+                multiplayer_join();
+            }
+            else if (choice == 2) break;
         }
     }
-    
-    return -1;
 }
 
-void get_username(char *username) {
+// Funcția pentru a găzdui un joc (host)
+void multiplayer_host() {
+    int server_fd;
+    struct sockaddr_in address;
+    int opt = 1;
+    int addrlen = sizeof(address);
+    
+    // Crearea socket-ului
+    if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
+        mvprintw(LINES / 2, COLS / 2 - 15, "Eroare la crearea socket-ului");
+        refresh();
+        getch();
+        return;
+    }
+    
+    // Setarea socket-ului pentru reutilizare
+    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))) {
+        mvprintw(LINES / 2, COLS / 2 - 15, "Eroare la setarea socket-ului");
+        refresh();
+        getch();
+        close(server_fd);
+        return;
+    }
+    
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = INADDR_ANY;
+    address.sin_port = htons(PORT);
+    
+    // Binding
+    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
+        mvprintw(LINES / 2, COLS / 2 - 15, "Eroare la binding");
+        refresh();
+        getch();
+        close(server_fd);
+        return;
+    }
+    
+    // Ascultare pentru conexiuni
+    if (listen(server_fd, 1) < 0) {
+        mvprintw(LINES / 2, COLS / 2 - 15, "Eroare la listen");
+        refresh();
+        getch();
+        close(server_fd);
+        return;
+    }
+    
     clear();
-    echo();
-    mvprintw(8, COLS/2 - 20, "Enter your username (max 20 chars): ");
+    mvprintw(LINES / 2, COLS / 2 - 15, "Așteptare pentru conexiune pe portul %d...", PORT);
+    mvprintw(LINES / 2 + 1, COLS / 2 - 15, "Apasă orice tastă pentru a anula");
     refresh();
     
-    getstr(username);
+    // Non-blocking 
+    int flags = fcntl(server_fd, F_GETFL, 0);
+    fcntl(server_fd, F_SETFL, flags | O_NONBLOCK);
     
-    // Asigură-te că username-ul nu depășește lungimea maximă
-    username[MAX_USERNAME_LEN - 1] = '\0';
+    fd_set read_fds;
+    struct timeval tv;
+    int activity;
     
+    while (1) {
+        FD_ZERO(&read_fds);
+        FD_SET(server_fd, &read_fds);
+        FD_SET(STDIN_FILENO, &read_fds);
+        
+        tv.tv_sec = 0;
+        tv.tv_usec = 100000;
+        
+        activity = select(server_fd + 1, &read_fds, NULL, NULL, &tv);
+        
+        if (activity < 0) {
+            mvprintw(LINES / 2 + 2, COLS / 2 - 15, "Eroare la select");
+            refresh();
+            getch();
+            close(server_fd);
+            return;
+        }
+        
+        if (FD_ISSET(STDIN_FILENO, &read_fds)) {
+            getch();
+            mvprintw(LINES / 2 + 2, COLS / 2 - 15, "Anulat de utilizator");
+            refresh();
+            getch();
+            close(server_fd);
+            return;
+        }
+        
+        if (FD_ISSET(server_fd, &read_fds)) {
+            socket_fd = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
+            if (socket_fd < 0) {
+                mvprintw(LINES / 2 + 2, COLS / 2 - 15, "Eroare la accept");
+                refresh();
+                getch();
+                close(server_fd);
+                return;
+            }
+            break;
+        }
+    }
+    
+    // Înapoi la blocking
+    flags = fcntl(socket_fd, F_GETFL, 0);
+    fcntl(socket_fd, F_SETFL, flags & ~O_NONBLOCK);
+    
+    close(server_fd);
+    
+    // Pregătire joc
+    is_host = 1;
+    is_connected = 1;
+    pthread_create(&network_thread, NULL, network_thread_function, NULL);
+    
+    clear();
+    mvprintw(LINES / 2, COLS / 2 - 15, "Jucător conectat! Începe jocul...");
+    refresh();
+    napms(2000);
+    
+    start_multiplayer_game();
+    
+    is_connected = 0;
+    pthread_join(network_thread, NULL);
+    close(socket_fd);
+}
+
+// Funcția pentru a se alătura unui joc
+void multiplayer_join() {
+    struct sockaddr_in serv_addr;
+    char ip_address[16] = {0};
+    
+    clear();
+    echo();
+    mvprintw(LINES / 2, COLS / 2 - 15, "Introdu adresa IP a host-ului: ");
+    getstr(ip_address);
     noecho();
-}
-
-void draw_multiplayer_hud(player_t *players, int player_count, int boss_health, int pvp_phase) {
-    int start_y = LINES - 5;
     
-    attron(COLOR_PAIR(3) | A_BOLD);
-    mvprintw(start_y, 2, "MULTIPLAYER MODE");
-    
-    if (pvp_phase) {
-        mvprintw(start_y, COLS/2 - 10, "PVP PHASE - LAST PLAYER STANDING WINS!");
-    } else {
-        mvprintw(start_y, COLS/2 - 10, "COOPERATIVE PHASE - BOSS HEALTH: %d%%", boss_health);
+    if ((socket_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+        mvprintw(LINES / 2 + 2, COLS / 2 - 15, "Eroare la crearea socket-ului");
+        refresh();
+        getch();
+        return;
     }
     
-    for (int i = 0; i < player_count; i++) {
-        mvprintw(start_y + 1 + i, 2, "Player %d: %s - Score: %d", 
-                 i + 1, players[i].username, players[i].score);
-    }
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(PORT);
     
-    attroff(COLOR_PAIR(3) | A_BOLD);
-}
-
-void draw_other_player(player_t *player) {
-    attron(COLOR_PAIR(6) | A_BOLD);
-    mvprintw(player->y, player->x,    "  /\\  ");
-    mvprintw(player->y+1, player->x,  " /  \\ ");
-    mvprintw(player->y+2, player->x,  "|----|");
-    mvprintw(player->y+3, player->x,  "| () |");
-    mvprintw(player->y+4, player->x,  "| () |");
-    mvprintw(player->y+5, player->x,  "| __ |");
-    mvprintw(player->y+6, player->x,  "/_\\ /_\\");
-    attroff(COLOR_PAIR(6) | A_BOLD);
-}
-
-void multiplayer_mode() {
-    // Inițializează culorile
-    start_color();
-    init_pair(1, COLOR_RED, COLOR_BLACK);
-    init_pair(2, COLOR_BLUE, COLOR_BLACK);
-    init_pair(3, COLOR_YELLOW, COLOR_BLACK);
-    init_pair(4, COLOR_CYAN, COLOR_BLACK);
-    init_pair(5, COLOR_GREEN, COLOR_BLACK);
-    init_pair(6, COLOR_MAGENTA, COLOR_BLACK);
-    init_pair(7, COLOR_WHITE, COLOR_BLACK);
-    
-    timeout(20);  // Non-blocking getch
-    
-    char server_ip[16];
-    int is_client = select_multiplayer_mode(server_ip);
-    
-    // Obține numele de utilizator
-    char username[MAX_USERNAME_LEN];
-    get_username(username);
-    
-    int socket_fd;
-    
-    if (is_client) {
-        // Conectare la server
-        mvprintw(10, COLS/2 - 15, "Connecting to server...");
-        refresh();
-        
-        socket_fd = connect_to_server(server_ip);
-        
-        if (socket_fd < 0) {
-            mvprintw(12, COLS/2 - 15, "Failed to connect to server!");
-            refresh();
-            getch();
-            return;
-        }
-    } else {
-        // Pornește serverul
-        mvprintw(10, COLS/2 - 15, "Starting server...");
-        refresh();
-        
-        int server_fd = create_server();
-        
-        if (server_fd < 0) {
-            mvprintw(12, COLS/2 - 15, "Failed to start server!");
-            refresh();
-            getch();
-            return;
-        }
-        
-        // Fork-ul procesului pentru a rula serverul în background
-        pid_t pid = fork();
-        
-        if (pid < 0) {
-            mvprintw(12, COLS/2 - 15, "Failed to fork process!");
-            refresh();
-            getch();
-            return;
-        } else if (pid == 0) {
-            // Procesul copil - serverul
-            handle_connections(server_fd);
-            exit(0);
-        }
-        
-        // Procesul părinte - clientul
-        mvprintw(12, COLS/2 - 15, "Server started. Connecting...");
-        refresh();
-        
-        // Conectare la serverul local
-        socket_fd = connect_to_server("127.0.0.1");
-        
-        if (socket_fd < 0) {
-            mvprintw(14, COLS/2 - 15, "Failed to connect to local server!");
-            refresh();
-            getch();
-            return;
-        }
-    }
-    
-    // Primește ID-ul de la server
-    packet_t join_packet;
-    join_packet.type = PACKET_JOIN;
-    strncpy(join_packet.player.username, username, MAX_USERNAME_LEN);
-    
-    send_packet(socket_fd, &join_packet);
-    
-    if (receive_packet(socket_fd, &join_packet) <= 0) {
-        mvprintw(14, COLS/2 - 15, "Failed to receive player ID!");
+    if (inet_pton(AF_INET, ip_address, &serv_addr.sin_addr) <= 0) {
+        mvprintw(LINES / 2 + 2, COLS / 2 - 15, "Adresă IP invalidă");
         refresh();
         getch();
         close(socket_fd);
         return;
     }
     
-    int player_id = join_packet.player.id;
-    
-    mvprintw(14, COLS/2 - 15, "Connected! You are Player %d", player_id + 1);
-    mvprintw(16, COLS/2 - 15, "Waiting for other players...");
+    clear();
+    mvprintw(LINES / 2, COLS / 2 - 15, "Se conectează la %s...", ip_address);
     refresh();
     
-    // Așteptăm ca toți jucătorii să se conecteze
-    game_state_t game_state;
-    memset(&game_state, 0, sizeof(game_state_t));
-    
-    while (game_state.player_count < MAX_PLAYERS) {
-        if (receive_packet(socket_fd, &join_packet) <= 0) {
-            mvprintw(18, COLS/2 - 15, "Connection lost!");
-            refresh();
-            getch();
-            close(socket_fd);
-            return;
-        }
-        
-        // Actualizează starea jocului
-        game_state.player_count = join_packet.player.id + 1;
-        mvprintw(18, COLS/2 - 15, "Players connected: %d/%d", 
-                 game_state.player_count, MAX_PLAYERS);
+    if (connect(socket_fd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+        mvprintw(LINES / 2 + 2, COLS / 2 - 15, "Conexiune eșuată");
         refresh();
-        
-        napms(100);
+        getch();
+        close(socket_fd);
+        return;
     }
     
-    mvprintw(20, COLS/2 - 15, "All players connected! Starting game...");
+    is_host = 0;
+    is_connected = 1;
+    pthread_create(&network_thread, NULL, network_thread_function, NULL);
+    
+    clear();
+    mvprintw(LINES / 2, COLS / 2 - 15, "Conectat la server! Începe jocul...");
     refresh();
     napms(2000);
     
-    // Inițializează jocul
-    arma_t arme[NUM_ARME_DISPONIBILE];
-    arma_t arme_selectate[MAX_TOTAL_ARME_SELECTATE];
-    int num_arme_selectate;
+    start_multiplayer_game();
     
-    init_arme(arme);
-    select_arme(arme, arme_selectate, &num_arme_selectate);
+    is_connected = 0;
+    pthread_join(network_thread, NULL);
+    close(socket_fd);
+}
+
+// Funcția pentru thread-ul de rețea
+void *network_thread_function(void *arg) {
+    network_packet_t packet;
     
+    while (is_connected) {
+        int bytes_received = recv(socket_fd, &packet, sizeof(network_packet_t), 0);
+        
+        if (bytes_received <= 0) {
+            is_connected = 0;
+            break;
+        }
+        
+        switch (packet.type) {
+            case 1:  // Actualizare poziție
+                remote_player_x = packet.x;
+                remote_player_y = packet.y;
+                remote_player_score = packet.score;
+                remote_player_alive = packet.is_alive;
+                
+                if (!is_host) {
+                    game_phase = packet.phase;
+                }
+                break;
+                
+            case 2:  // Actualizare fază
+                game_phase = packet.phase;
+                break;
+                
+            case 3:  // Lovitură jucător
+                if (game_phase == 2) {
+                    remote_player_alive = 0;
+                }
+                break;
+        }
+        
+        napms(1);
+    }
+    
+    return NULL;
+}
+
+// Funcția pentru desenarea stâlpului de avertizare
+void draw_warning_pillar(int x, int y, int color) {
+    attron(COLOR_PAIR(color));
+    mvprintw(y, x,     "|===|");
+    mvprintw(y + 1, x, "| ! |");
+    mvprintw(y + 2, x, "| ! |");
+    mvprintw(y + 3, x, "|===|");
+    mvprintw(y + 4, x, "| | |");
+    mvprintw(y + 5, x, "| | |");
+    mvprintw(y + 6, x, "|___|");
+    attroff(COLOR_PAIR(color));
+}
+
+// Funcția pentru jocul multiplayer propriu-zis
+void start_multiplayer_game() {
     alien_t *aliens = malloc(NUMBER_OF_ALIENS * sizeof(alien_t));
     if (!aliens) {
         endwin();
-        printf("Memory allocation error!\n");
+        printf("Eroare alocare memorie!\n");
         exit(1);
     }
     
@@ -287,433 +314,304 @@ void multiplayer_mode() {
     createAliens(aliens);
     init_projectiles();
     
-    // Structură pentru jucătorul local
-    player_t local_player;
-    strncpy(local_player.username, username, MAX_USERNAME_LEN);
-    local_player.x = COLS / 2 - 3;
-    local_player.y = LINES - 8;
-    local_player.health = 100;
-    local_player.score = 0;
-    local_player.isalive = 1;
-    local_player.weapon_type = 0;
-    local_player.ammo = arme_selectate[0].gloanțe_disp;
-    local_player.id = player_id;
+    arma_t arme[NUM_ARME_DISPONIBILE];
+    arma_t arme_selectate[MAX_TOTAL_ARME_SELECTATE];
+    int num_arme_selectate;
+    int projectile_count = 0;
     
-    // Bucla principală a jocului
+    init_arme(arme);
+    
+    // Selectarea armelor
+    int highlight = 0;
+    num_arme_selectate = 0;
+    int counts[NUM_ARME_DISPONIBILE] = {0};
+    
+    while (num_arme_selectate < MAX_TOTAL_ARME_SELECTATE) {
+        clear();
+        mvprintw(10, 10, "Selectează armele (SUS/JOS navighează, ENTER adaugă %d, 'q' termină)", ARME_PER_SELECTIE);
+        for (int i = 0; i < NUM_ARME_DISPONIBILE; i++) {
+            if (i == highlight) attron(A_REVERSE);
+            mvprintw(13 + i * 2, 15, "%s (%d/%d)", arme[i].nume, counts[i], MAX_ARME_PER_SELECTIE);
+            if (i == highlight) attroff(A_REVERSE);
+        }
+        refresh();
+
+        int key = getch();
+        if (key == 'q') break;
+        if (key == KEY_UP) highlight = (highlight - 1 + NUM_ARME_DISPONIBILE) % NUM_ARME_DISPONIBILE;
+        if (key == KEY_DOWN) highlight = (highlight + 1) % NUM_ARME_DISPONIBILE;
+        if (key == 10) {  // Enter
+            int to_add = ARME_PER_SELECTIE;
+            if (counts[highlight] + to_add > MAX_ARME_PER_SELECTIE) {
+                to_add = MAX_ARME_PER_SELECTIE - counts[highlight];
+            }
+            if (num_arme_selectate + to_add > MAX_TOTAL_ARME_SELECTATE) {
+                to_add = MAX_TOTAL_ARME_SELECTATE - num_arme_selectate;
+            }
+            for (int i = 0; i < to_add; i++) {
+                arme_selectate[num_arme_selectate] = arme[highlight];
+                num_arme_selectate++;
+            }
+            counts[highlight] += to_add;
+        }
+    }
+    
+    int local_x = is_host ? COLS / 3 : 2 * COLS / 3;
+    int local_y = LINES - 8;
+    int local_score = 0;
+    int local_current_weapon = 0;
+    int local_is_alive = 1;
+    
+    int alien_count = NUMBER_OF_ALIENS;
+    boss_t boss;
+    
+    time_t last_alien_move = time(NULL);
+    time_t last_alien_spawn = time(NULL);
+    time_t last_network_update = time(NULL);
+    
     int game_over = 0;
-    int pvp_phase = 0;
     
-    // Faza cooperativă
-    while (!game_over && !pvp_phase) {
-        coop_phase(socket_fd, &local_player, aliens, arme_selectate, num_arme_selectate);
+    while (!game_over && is_connected) {
+        clear();
         
-        // Verifică dacă boss-ul a fost învins
-        packet_t packet;
-        if (receive_packet(socket_fd, &packet) > 0) {
-            if (packet.type == PACKET_PVP_START) {
-                pvp_phase = 1;
+        time_t current_time = time(NULL);
+        
+        if (is_host && current_time - last_alien_move >= ((double)ALIEN_MOVE_DELAY / 1000.0)) {
+            if (game_phase == 0) {
+                moveAliens(aliens);
+            } else if (game_phase == 1) {
+                moveBoss(&boss);
+            }
+            last_alien_move = current_time;
+        }
+        
+        if (is_host && current_time - last_alien_spawn >= ((double)ALIEN_SPAWN_INTERVAL / 1000.0) && game_phase == 0) {
+            regenerate_aliens(aliens, &alien_count);
+            last_alien_spawn = current_time;
+        }
+        
+        move_projectiles();
+        
+        for (int i = 0; i < MAX_PROJECTILE; i++) {
+            if (projectiles[i].is_active) {
+                if (game_phase == 0) {
+                    if (check_projectile_collision(projectiles[i].x, projectiles[i].y, aliens, &alien_count)) {
+                        projectiles[i].is_active = 0;
+                        local_score += 10;
+                    }
+                } else if (game_phase == 1) {
+                    int result = check_projectile_boss_collision(projectiles[i].x, projectiles[i].y, &boss);
+                    if (result > 0) {
+                        projectiles[i].is_active = 0;
+                        local_score += 20;
+                        
+                        if (result == 2 && is_host) {
+                            game_phase = 2;
+                            
+                            network_packet_t packet;
+                            memset(&packet, 0, sizeof(network_packet_t));
+                            packet.type = 2;
+                            packet.phase = 2;
+                            send(socket_fd, &packet, sizeof(network_packet_t), 0);
+                        }
+                    }
+                } else if (game_phase == 2) {
+                    if (projectiles[i].x >= remote_player_x && 
+                        projectiles[i].x < remote_player_x + 6 &&
+                        projectiles[i].y >= remote_player_y && 
+                        projectiles[i].y < remote_player_y + 7) {
+                        
+                        projectiles[i].is_active = 0;
+                        
+                        network_packet_t packet;
+                        memset(&packet, 0, sizeof(network_packet_t));
+                        packet.type = 3;
+                        packet.data = arme_selectate[local_current_weapon].damage;
+                        send(socket_fd, &packet, sizeof(network_packet_t), 0);
+                    }
+                }
+            }
+        }
+        
+        if (game_phase <= 1) {
+            draw_warning_pillar(COLS - 10, LINES - 8, game_phase == 0 ? 1 : 2);
+            
+            if (game_phase == 0) {
+                printAliens(aliens);
+            } else {
+                printBoss(&boss);
+            }
+        } else {
+            for (int i = 0; i < 50; i++) {
+                mvaddch(rand() % LINES, rand() % COLS, '*');
+            }
+        }
+        
+        draw_spaceship(local_x, local_y);
+        draw_spaceship(remote_player_x, remote_player_y);
+        
+        draw_projectiles();
+        
+        mvprintw(LINES - 2, 0, "Scor: %d | Arma: %s (Gloanțe: %d)",
+                 local_score,
+                 arme_selectate[local_current_weapon].nume,
+                 arme_selectate[local_current_weapon].gloanțe_disp);
+        
+        if (game_phase == 0) {
+            mvprintw(LINES - 1, 0, "Extratereștri rămași: %d | Faza: Cooperativă", alien_count);
+        } else if (game_phase == 1) {
+            mvprintw(LINES - 1, 0, "Viață Boss: %d | Faza: Boss", boss.health);
+        } else {
+            mvprintw(LINES - 1, 0, "Faza: PvP | Elimină adversarul!");
+        }
+        
+        refresh();
+        
+        int ch = getch();
+        switch (ch) {
+            case KEY_LEFT:
+                if (local_x > 0) local_x -= 1;
+                break;
+                
+            case KEY_RIGHT:
+                if (local_x < COLS - 7) local_x += 1;
+                break;
+                
+            case KEY_UP:
+                if (game_phase == 2 && local_y > 1) local_y -= 1;
+                break;
+                
+            case KEY_DOWN:
+                if (game_phase == 2 && local_y < LINES - 8) local_y += 1;
+                break;
+                
+            case ' ':
+                if (local_current_weapon < num_arme_selectate && 
+                    arme_selectate[local_current_weapon].gloanțe_disp > 0) {
+                    
+                    arme_selectate[local_current_weapon].gloanțe_disp--;
+                    
+                    if (game_phase < 2) {
+                        shoot_projectile(
+                            local_x + 3,
+                            local_y - 1,
+                            arme_selectate[local_current_weapon].damage,
+                            2,
+                            arme_selectate[local_current_weapon].damage % 4 + 1,
+                            &projectile_count,
+                            &arme_selectate[local_current_weapon]
+                        );
+                    } else {
+                        int dx = remote_player_x - local_x;
+                        int dy = remote_player_y - local_y;
+                        int direction;
+                        
+                        if (abs(dx) > abs(dy)) {
+                            direction = (dx > 0) ? 1 : 0;
+                        } else {
+                            direction = (dy > 0) ? 3 : 2;
+                        }
+                        
+                        shoot_projectile(
+                            local_x + 3,
+                            local_y + ((direction == 3) ? 6 : -1),
+                            arme_selectate[local_current_weapon].damage,
+                            direction,
+                            arme_selectate[local_current_weapon].damage % 4 + 1,
+                            &projectile_count,
+                            &arme_selectate[local_current_weapon]
+                        );
+                    }
+                }
+                break;
+                
+            case 10:  // Enter
+                if (num_arme_selectate > 0) {
+                    local_current_weapon = (local_current_weapon + 1) % num_arme_selectate;
+                }
+                break;
+                
+            case 'q':
+            case 'Q':
+                game_over = 1;
+                break;
+        }
+        
+        if (game_phase == 0) {
+            if (check_alien_collision(aliens, local_x, local_y)) {
+                local_is_alive = 0;
+                game_over = 1;
+            }
+            
+            if (alien_count <= 0 && is_host) {
+                game_phase = 1;
+                createBoss(&boss);
+                
+                for (int i = 0; i < num_arme_selectate; i++) {
+                    arme_selectate[i].gloanțe_disp = arme[i].gloanțe_disp;
+                }
+                
+                network_packet_t packet;
+                memset(&packet, 0, sizeof(network_packet_t));
+                packet.type = 2;
+                packet.phase = 1;
+                send(socket_fd, &packet, sizeof(network_packet_t), 0);
+                
                 clear();
-                attron(COLOR_PAIR(3) | A_BOLD);
-                mvprintw(LINES/2, COLS/2 - 25, "THE BOSS HAS BEEN DEFEATED! PVP PHASE STARTING!");
-                attroff(COLOR_PAIR(3) | A_BOLD);
+                mvprintw(LINES / 2, COLS / 2 - 20, "Toți extratereștrii au fost eliminați! Se apropie BOSS-ul!");
                 refresh();
                 napms(3000);
             }
+        } else if (game_phase == 1) {
+            if (check_boss_collision(&boss, local_x, local_y)) {
+                local_is_alive = 0;
+                game_over = 1;
+            }
         }
+        
+        if (current_time - last_network_update >= 0.05) {
+            network_packet_t packet;
+            memset(&packet, 0, sizeof(network_packet_t));
+            packet.type = 1;
+            packet.x = local_x;
+            packet.y = local_y;
+            packet.score = local_score;
+            packet.is_alive = local_is_alive;
+            packet.phase = game_phase;
+            
+            if (is_host) {
+                packet.alien_count = alien_count;
+                if (game_phase == 1) {
+                    packet.health = boss.health;
+                }
+            }
+            
+            send(socket_fd, &packet, sizeof(network_packet_t), 0);
+            last_network_update = current_time;
+        }
+        
+        if (!local_is_alive || !remote_player_alive) {
+            clear();
+            if (!local_is_alive) {
+                mvprintw(LINES / 2, COLS / 2 - 10, "Ai fost învins!");
+            } else {
+                mvprintw(LINES / 2, COLS / 2 - 10, "Ai câștigat!");
+            }
+            refresh();
+            napms(3000);
+            game_over = 1;
+        }
+        
+        if (!is_connected) {
+            clear();
+            mvprintw(LINES / 2, COLS / 2 - 15, "Conexiunea cu celălalt jucător a fost pierdută.");
+            refresh();
+            napms(3000);
+            game_over = 1;
+        }
+        
+        napms(16);
     }
     
-    // Faza PvP
-    if (pvp_phase) {
-        // Resetăm poziția jucătorului pentru faza spațială
-        local_player.x = COLS / 4 + player_id * (COLS / 2);
-        local_player.y = LINES / 4;
-        
-        // Reîncărcăm armele
-        for (int i = 0; i < num_arme_selectate; i++) {
-            arme_selectate[i].gloanțe_disp = 30;
-        }
-        
-        // Afișăm un mesaj de tranziție
-        clear();
-        attron(COLOR_PAIR(1) | A_BOLD);
-        mvprintw(LINES/2 - 2, COLS/2 - 20, "ENTERING SPACE DUEL PHASE");
-        mvprintw(LINES/2, COLS/2 - 30, "SHIPS ARE LAUNCHING INTO SPACE FOR THE FINAL BATTLE");
-        mvprintw(LINES/2 + 2, COLS/2 - 15, "LAST PLAYER STANDING WINS!");
-        attroff(COLOR_PAIR(1) | A_BOLD);
-        refresh();
-        napms(3000);
-        
-        // Bucla pentru faza PvP
-        while (!game_over && local_player.isalive) {
-            pvp_phase(socket_fd, &local_player, arme_selectate, num_arme_selectate);
-        }
-    }
-    
-    close(socket_fd);
     free(aliens);
-}
-
-void coop_phase(int socket, player_t *player, alien_t *aliens, arma_t *arme_selectate, int num_arme_selectate) {
-    int current_weapon = 0;
-    int projectile_count = 0;
-    packet_t packet;
-    
-    clear();
-    
-    // Desenează elemente de joc
-    draw_spaceship(player->x, player->y);
-    printAliens(aliens);
-    
-    // Primește actualizări de la server
-    if (receive_packet(socket, &packet) > 0) {
-        // Actualizează starea jocului în funcție de tipul pachetului
-        
-        // Afișează alți jucători
-        for (int i = 0; i < MAX_PLAYERS; i++) {
-            if (i != player->id && packet.player.isalive) {
-                draw_other_player(&packet.player);
-            }
-        }
-        
-        // Afișează HUD
-        player_t players[MAX_PLAYERS];
-        players[player->id] = *player;
-        players[1 - player->id] = packet.player;
-        
-        draw_multiplayer_hud(players, MAX_PLAYERS, packet.data1, packet.data2);
-    }
-    
-    // Procesează input de la tastatură
-    int ch = getch();
-    switch (ch) {
-        case KEY_LEFT:
-            if (player->x > 0) player->x--;
-            break;
-        case KEY_RIGHT:
-            if (player->x < COLS - 7) player->x++;
-            break;
-        case KEY_UP:
-            if (player->y > 10) player->y--;
-            break;
-        case KEY_DOWN:
-            if (player->y < LINES - 10) player->y++;
-            break;
-        case ' ':
-            if (current_weapon < num_arme_selectate && arme_selectate[current_weapon].gloanțe_disp > 0) {
-                arme_selectate[current_weapon].gloanțe_disp--;
-                shoot_projectile(
-                    player->x + 3,
-                    player->y - 1,
-                    arme_selectate[current_weapon].damage,
-                    2,
-                    arme_selectate[current_weapon].damage % 4 + 1,
-                    &projectile_count,
-                    &arme_selectate[current_weapon]
-                );
-                
-                // Trimite pachet pentru tragere la server
-                packet.type = PACKET_SHOT;
-                packet.player = *player;
-                packet.data1 = current_weapon;
-                packet.data2 = 2;  // Direcția - sus
-                send_packet(socket, &packet);
-            }
-            break;
-        case '1': case '2': case '3': case '4': case '5':
-            {
-                int new_weapon = ch - '1';
-                if (new_weapon < num_arme_selectate) {
-                    current_weapon = new_weapon;
-                    player->weapon_type = current_weapon;
-                }
-            }
-            break;
-        case '\n':  // Enter
-            if (num_arme_selectate > 0) {
-                current_weapon = (current_weapon + 1) % num_arme_selectate;
-                player->weapon_type = current_weapon;
-            }
-            break;
-        case 'q':
-            // Deconectare de la server
-            packet.type = PACKET_DISCONNECT;
-            packet.player = *player;
-            send_packet(socket, &packet);
-            player->isalive = 0;
-            return;
-    }
-    
-    // Verifică coliziunile cu extratereștrii
-    for (int i = 0; i < MAX_PROJECTILE; i++) {
-        if (projectiles[i].is_active) {
-            if (check_projectile_collision(projectiles[i].x, projectiles[i].y, aliens, &alien_count)) {
-                projectiles[i].is_active = 0;
-                
-                // Trimite pachet pentru lovirea unui extraterestru
-                packet.type = PACKET_ALIEN_HIT;
-                packet.player = *player;
-                packet.data1 = 10;  // Puncte pentru lovirea unui extraterestru
-                send_packet(socket, &packet);
-                
-                player->score += 10;
-            }
-        }
-    }
-    
-    // Verifică coliziunea cu boss-ul (dacă există)
-    // Această parte depinde de cum gestionați boss-ul în jocul vostru
-    // Aici este doar un exemplu
-    for (int i = 0; i < MAX_PROJECTILE; i++) {
-        if (projectiles[i].is_active) {
-            // Verifică coliziunea cu boss-ul
-            // Exemplu:
-            // if (check_boss_collision(projectiles[i].x, projectiles[i].y, boss)) {
-            //     projectiles[i].is_active = 0;
-            //     
-            //     // Trimite pachet pentru lovirea boss-ului
-            //     packet.type = PACKET_BOSS_HIT;
-            //     packet.player = *player;
-            //     packet.data1 = arme_selectate[current_weapon].damage;
-            //     send_packet(socket, &packet);
-            //     
-            //     player->score += 20;
-            // }
-        }
-    }
-    
-    // Verifică coliziunea cu extratereștrii
-    if (check_alien_collision(aliens, player->x, player->y)) {
-        // Jucătorul a fost lovit de un extraterestru
-        player->health -= 10;
-        
-        if (player->health <= 0) {
-            player->isalive = 0;
-            
-            // Trimite pachet pentru game over
-            packet.type = PACKET_GAME_OVER;
-            packet.player = *player;
-            send_packet(socket, &packet);
-            
-            // Afișează mesaj de game over
-            clear();
-            attron(COLOR_PAIR(1) | A_BOLD);
-            mvprintw(LINES/2, COLS/2 - 20, "GAME OVER! Your ship was destroyed!");
-            attroff(COLOR_PAIR(1) | A_BOLD);
-            refresh();
-            napms(3000);
-            
-            return;
-        }
-    }
-    
-    // Trimite poziția actualizată a jucătorului la server
-    packet.type = PACKET_PLAYER_POS;
-    packet.player = *player;
-    send_packet(socket, &packet);
-    
-    // Afișează informații despre arma curentă
-    attron(COLOR_PAIR(3) | A_BOLD);
-    mvprintw(LINES - 2, 2, "Weapon: %s (Damage: %d, Ammo: %d)",
-             arme_selectate[current_weapon].nume,
-             arme_selectate[current_weapon].damage,
-             arme_selectate[current_weapon].gloanțe_disp);
-    attroff(COLOR_PAIR(3) | A_BOLD);
-    
-    refresh();
-    
-    // Actualizează starea jucătorului
-    player->ammo = arme_selectate[current_weapon].gloanțe_disp;
-    
-    // Pauză scurtă pentru a limita rata de cadre
-    usleep(16666);  // ~60 FPS
-}
-
-void pvp_phase(int socket, player_t *player, arma_t *arme_selectate, int num_arme_selectate) {
-    int current_weapon = 0;
-    int projectile_count = 0;
-    packet_t packet;
-    
-    clear();
-    
-    // Desenăm un fundal spațial (stele)
-    for (int i = 0; i < 100; i++) {
-        int x = rand() % COLS;
-        int y = rand() % (LINES - 5);
-        attron(COLOR_PAIR(7));
-        mvaddch(y, x, '.');
-        attroff(COLOR_PAIR(7));
-    }
-    
-    // Desenează nava jucătorului
-    attron(COLOR_PAIR(5) | A_BOLD);
-    mvprintw(player->y, player->x,    "  /\\  ");
-    mvprintw(player->y+1, player->x,  " /  \\ ");
-    mvprintw(player->y+2, player->x,  "|----|");
-    mvprintw(player->y+3, player->x,  "| () |");
-    mvprintw(player->y+4, player->x,  "| () |");
-    mvprintw(player->y+5, player->x,  "| __ |");
-    mvprintw(player->y+6, player->x,  "/_\\ /_\\");
-    attroff(COLOR_PAIR(5) | A_BOLD);
-    
-    // Primește actualizări de la server
-    if (receive_packet(socket, &packet) > 0) {
-        // Actualizează starea jocului în funcție de tipul pachetului
-        
-        // Afișează celălalt jucător dacă este în viață
-        if (packet.player.isalive) {
-            draw_other_player(&packet.player);
-        }
-        
-        // Afișează HUD pentru PvP
-        player_t players[MAX_PLAYERS];
-        players[player->id] = *player;
-        players[1 - player->id] = packet.player;
-        
-        draw_multiplayer_hud(players, MAX_PLAYERS, 0, 1);
-    }
-    
-    // Procesează input de la tastatură
-    int ch = getch();
-    switch (ch) {
-        case KEY_LEFT:
-            if (player->x > 0) player->x--;
-            break;
-        case KEY_RIGHT:
-            if (player->x < COLS - 7) player->x++;
-            break;
-        case KEY_UP:
-            if (player->y > 0) player->y--;
-            break;
-        case KEY_DOWN:
-            if (player->y < LINES - 10) player->y++;
-            break;
-        case ' ':
-            if (current_weapon < num_arme_selectate && arme_selectate[current_weapon].gloanțe_disp > 0) {
-                arme_selectate[current_weapon].gloanțe_disp--;
-                
-                // În PvP, jucătorii pot trage în orice direcție
-                // Sus, jos, stânga, dreapta
-                for (int dir = 0; dir < 4; dir++) {
-                    shoot_projectile(
-                        player->x + 3,
-                        player->y + 3,
-                        arme_selectate[current_weapon].damage,
-                        dir,
-                        arme_selectate[current_weapon].damage % 4 + 1,
-                        &projectile_count,
-                        &arme_selectate[current_weapon]
-                    );
-                }
-                
-                // Trimite pachet pentru tragere la server
-                packet.type = PACKET_SHOT;
-                packet.player = *player;
-                packet.data1 = current_weapon;
-                packet.data2 = 4;  // Direcție specială pentru PvP - toate direcțiile
-                send_packet(socket, &packet);
-            }
-            break;
-        case '1': case '2': case '3': case '4': case '5':
-            {
-                int new_weapon = ch - '1';
-                if (new_weapon < num_arme_selectate) {
-                    current_weapon = new_weapon;
-                    player->weapon_type = current_weapon;
-                }
-            }
-            break;
-        case '\n':  // Enter
-            if (num_arme_selectate > 0) {
-                current_weapon = (current_weapon + 1) % num_arme_selectate;
-                player->weapon_type = current_weapon;
-            }
-            break;
-        case 'q':
-            // Deconectare de la server
-            packet.type = PACKET_DISCONNECT;
-            packet.player = *player;
-            send_packet(socket, &packet);
-            player->isalive = 0;
-            return;
-    }
-    
-    move_projectiles();
-    draw_projectiles();
-    
-    // Verifică coliziunea cu celălalt jucător
-    // Această parte este simplificată - în practica reală ar trebui
-    // să implementați o verificare mai complexă folosind pachetele primite
-    for (int i = 0; i < MAX_PROJECTILE; i++) {
-        if (projectiles[i].is_active) {
-            // Verificăm coliziunea cu celălalt jucător
-            if (packet.player.isalive &&
-                projectiles[i].x >= packet.player.x && 
-                projectiles[i].x < packet.player.x + 6 &&
-                projectiles[i].y >= packet.player.y && 
-                projectiles[i].y < packet.player.y + 7) {
-                
-                projectiles[i].is_active = 0;
-                
-                // Trimite pachet pentru lovirea celuilalt jucător
-                packet.type = PACKET_PVP_HIT;
-                packet.player = *player;
-                packet.data1 = arme_selectate[current_weapon].damage;
-                send_packet(socket, &packet);
-                
-                player->score += 5;
-            }
-        }
-    }
-    
-    // Verificăm dacă am fost lovit (trebuie implementat în funcție de pachetele primite)
-    // Exemplu:
-    if (packet.type == PACKET_PVP_HIT && packet.data1 > 0) {
-        player->health -= packet.data1;
-        
-        // Efect vizual pentru lovitură
-        attron(COLOR_PAIR(1) | A_BOLD);
-        mvprintw(player->y - 1, player->x, "HIT!");
-        attroff(COLOR_PAIR(1) | A_BOLD);
-        
-        if (player->health <= 0) {
-            player->isalive = 0;
-            
-            // Trimite pachet pentru game over
-            packet.type = PACKET_GAME_OVER;
-            packet.player = *player;
-            send_packet(socket, &packet);
-            
-            // Afișează mesaj de game over
-            clear();
-            attron(COLOR_PAIR(1) | A_BOLD);
-            mvprintw(LINES/2, COLS/2 - 15, "DEFEAT! Your ship was destroyed!");
-            attroff(COLOR_PAIR(1) | A_BOLD);
-            refresh();
-            napms(3000);
-            
-            return;
-        }
-    }
-    
-    // Trimite poziția actualizată a jucătorului la server
-    packet.type = PACKET_PLAYER_POS;
-    packet.player = *player;
-    send_packet(socket, &packet);
-    
-    // Afișează informații despre arma curentă și sănătatea jucătorului
-    attron(COLOR_PAIR(3) | A_BOLD);
-    mvprintw(LINES - 2, 2, "Weapon: %s (Damage: %d, Ammo: %d) | Health: %d",
-             arme_selectate[current_weapon].nume,
-             arme_selectate[current_weapon].damage,
-             arme_selectate[current_weapon].gloanțe_disp,
-             player->health);
-    attroff(COLOR_PAIR(3) | A_BOLD);
-    
-    refresh();
-    
-    // Actualizează starea jucătorului
-    player->ammo = arme_selectate[current_weapon].gloanțe_disp;
-    
-    // Pauză scurtă pentru a limita rata de cadre
-    usleep(16666);  // ~60 FPS
 }
